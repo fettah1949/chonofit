@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Member" ADD COLUMN "phone2" TEXT NOT NULL DEFAULT '';

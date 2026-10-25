@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role               String   @default("RECEPTIONIST")
+  active             Boolean  @default(true)
+  sessionVersion     Int      @default(0)
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  coachGroups  UserGroup[]
+}
+
+model GymSettings {
+  id        String   @id @default("default")
+  name      String   @default("Chrono Fitness")
+  address   String   @default("")
+  phone     String   @default("")
+  email     String   @default("")
+  logoPath  String?
+  currency       String   @default("MAD")
+  autoReminders  Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+model ReceiptSequence {
+  year Int @id
+  last Int
+}
+
+model Member {
+  id            String         @id @default(cuid())
+  firstName     String
+  lastName      String
+  phone         String
+  phone2        String         @default("")
+  guardianName     String         @default("")
+  guardianRelation String         @default("")
+  sex           String         @default("")
+  email         String?        @unique
+  birthDate     DateTime?
+  photoPath     String?
+  notes          String         @default("")
+  status         String         @default("ACTIVE")
+  hasInsurance            Boolean   @default(false)
+  insuranceStart          DateTime?
+  insuranceEnd            DateTime?
+  insuranceConfirmed      Boolean   @default(false)
+  insuranceConfirmedStart DateTime?
+  insuranceConfirmedEnd   DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  subscriptions  Subscription[]
+  payments       Payment[]
+  checkIns       CheckIn[]
+  reminders      Reminder[]
+  activities     MemberActivity[]
+  groups         MemberGroup[]
+  equipmentPurchases EquipmentPurchase[]
+
+  @@index([lastName, firstName])
+  @@index([status])
+}
+
+model SubscriptionPlan {
+  id            String         @id @default(cuid())
+  name          String
+  durationDays  Int
+  price         Float
+  description   String         @default("")
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  memberId  String
+  member    Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  startDate DateTime
+  endDate   DateTime?
+  status    String             @default("ACTIVE")
+  price     Float
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  payments  Payment[]
+  reminders Reminder[]
+
+  @@index([memberId])
+  @@index([status, endDate])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  memberId       String
+  member         Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  amount         Float
+  remainder      Float         @default(0)
+  method         String
+  paidAt         DateTime      @default(now())
+  note           String        @default("")
+  receiptNumber  String        @unique
+  createdById    String?
+  createdAt      DateTime      @default(now())
+
+  @@index([paidAt])
+  @@index([memberId])
+}
+
+model Reminder {
+  id             String        @id @default(cuid())
+  memberId       String
+  member         Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  status         String
+  error          String        @default("")
+  createdById    String?
+  createdAt      DateTime      @default(now())
+
+  @@index([subscriptionId, createdAt])
+  @@index([memberId, createdAt])
+}
+
+model CheckIn {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  checkedInAt DateTime @default(now())
+  createdById String?
+
+  @@index([checkedInAt])
+  @@index([memberId, checkedInAt])
+}
+
+model Activity {
+  id         String           @id @default(cuid())
+  code       String           @unique
+  name       String
+  sortOrder  Int              @default(0)
+  groups     TrainingGroup[]
+  members    MemberActivity[]
+  packs      EquipmentPack[]
+  items      EquipmentItem[]
+}
+
+model MemberActivity {
+  memberId   String
+  activityId String
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, activityId])
+}
+
+model TrainingGroup {
+  id         String        @id @default(cuid())
+  code       String        @unique
+  name       String
+  activityId String
+  activity   Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  days       String
+  ageMin     Int?
+  ageMax     Int?
+  sortOrder  Int           @default(0)
+  members    MemberGroup[]
+  coaches    UserGroup[]
+
+  @@index([activityId])
+}
+
+model UserGroup {
+  userId  String
+  groupId String
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   TrainingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}
+
+model MemberGroup {
+  memberId String
+  groupId  String
+  member   Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  group    TrainingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, groupId])
+}
+
+model EquipmentPack {
+  id         String          @id @default(cuid())
+  code       String          @unique
+  name       String
+  activityId String
+  activity   Activity        @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  price      Float
+  sortOrder  Int             @default(0)
+  items      EquipmentItem[]
+
+  @@index([activityId])
+}
+
+model EquipmentItem {
+  id         String              @id @default(cuid())
+  code       String              @unique
+  name       String
+  packId     String
+  pack       EquipmentPack       @relation(fields: [packId], references: [id], onDelete: Cascade)
+  activityId String
+  activity   Activity            @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  price      Float
+  sortOrder  Int                 @default(0)
+  purchases  EquipmentPurchase[]
+
+  @@index([activityId])
+  @@index([packId])
+}
+
+model EquipmentPurchase {
+  id          String        @id @default(cuid())
+  memberId    String
+  member      Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        EquipmentItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  unitPrice   Float
+  purchasedAt DateTime      @default(now())
+
+  @@index([memberId, purchasedAt])
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "TrainingGroup" ADD COLUMN "ageMin" INTEGER;
+ALTER TABLE "TrainingGroup" ADD COLUMN "ageMax" INTEGER;

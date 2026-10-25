@@ -32,6 +32,25 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# database, backups and WhatsApp session
+/data/whatsapp/
+/data/*.db
+/data/*.db-journal
+/data/*.db-wal
+/data/*.db-shm
+/backups/*.db
+
+# member and gym photos
+/public/uploads/members/*
+!/public/uploads/members/.gitkeep
+/public/uploads/gym/*
+!/public/uploads/gym/.gitkeep
+
+# google credentials
+/secrets/*
+!/secrets/.gitkeep
 
 # vercel
 .vercel
