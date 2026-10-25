@@ -50,10 +50,10 @@ npm start
 
 | Rôle | Nom | E-mail |
 | --- | --- | --- |
-| Admin | Mohamed | admin@chonofit.local |
-| Réception | Réception | reception@chonofit.local |
-| Coach | Soufiane | soufiane@chonofit.local |
-| Coach | Abdelkhalek | abdelkhalek@chonofit.local |
+| Admin | Mohamed | admin@chono.fitness |
+| Réception | Réception | reception@chono.fitness |
+| Coach | Soufiane | soufiane@chono.fitness |
+| Coach | Abdelkhalek | abdelkhalek@chono.fitness |
 
 Le seed pose un mot de passe initial, écrit dans `prisma/seed.ts`. La première connexion avec ce mot de passe ouvre seulement l'écran pour en choisir un nouveau. L'écran de connexion ne l'affiche pas. Le réceptionniste gère les adhérents, abonnements, paiements et le pointage. Les paramètres, les utilisateurs et les suppressions sont réservés à l'admin.
 

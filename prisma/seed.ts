@@ -8,12 +8,13 @@ async function main() {
   const adminPassword = await bcrypt.hash("Admin1234!", 10);
   const receptionPassword = await bcrypt.hash("Reception1234!", 10);
 
+  await renameAccount("admin@chonofit.local", "admin@chono.fitness");
   await prisma.user.upsert({
-    where: { email: "admin@chonofit.local" },
+    where: { email: "admin@chono.fitness" },
     update: {},
     create: {
       name: "Mohamed",
-      email: "admin@chonofit.local",
+      email: "admin@chono.fitness",
       passwordHash: adminPassword,
       role: "ADMIN",
       mustChangePassword: true,
@@ -21,16 +22,17 @@ async function main() {
   });
 
   await prisma.user.updateMany({
-    where: { email: "admin@chonofit.local", name: { in: ["Alex Martin", "Omar"] } },
+    where: { email: "admin@chono.fitness", name: { in: ["Alex Martin", "Omar"] } },
     data: { name: "Mohamed" },
   });
 
+  await renameAccount("reception@chonofit.local", "reception@chono.fitness");
   await prisma.user.upsert({
-    where: { email: "reception@chonofit.local" },
+    where: { email: "reception@chono.fitness" },
     update: {},
     create: {
       name: "Réception",
-      email: "reception@chonofit.local",
+      email: "reception@chono.fitness",
       passwordHash: receptionPassword,
       role: "RECEPTIONIST",
       mustChangePassword: true,
@@ -38,15 +40,16 @@ async function main() {
   });
 
   await prisma.user.updateMany({
-    where: { email: "reception@chonofit.local", name: "Inès Bernard" },
+    where: { email: "reception@chono.fitness", name: "Inès Bernard" },
     data: { name: "Réception" },
   });
 
   const coachPassword = await bcrypt.hash("Coach1234!", 10);
   for (const coach of [
-    { name: "Soufiane", email: "soufiane@chonofit.local" },
-    { name: "Abdelkhalek", email: "abdelkhalek@chonofit.local" },
+    { name: "Soufiane", email: "soufiane@chono.fitness", previous: "soufiane@chonofit.local" },
+    { name: "Abdelkhalek", email: "abdelkhalek@chono.fitness", previous: "abdelkhalek@chonofit.local" },
   ]) {
+    await renameAccount(coach.previous, coach.email);
     await prisma.user.upsert({
       where: { email: coach.email },
       update: {},
@@ -68,7 +71,7 @@ async function main() {
       name: "Chrono Fitness",
       address: "12 boulevard d'Anfa, Casablanca",
       phone: "05 22 45 67 89",
-      email: "contact@chonofit.local",
+      email: "contact@chono.fitness",
       currency: "MAD",
     },
   });
@@ -84,13 +87,23 @@ async function main() {
     });
   }
 
+  await prisma.gymSettings.updateMany({
+    where: { id: "default", email: "contact@chonofit.local" },
+    data: { email: "contact@chono.fitness" },
+  });
+
   await ensureCatalog(prisma, true);
 
   console.log("Comptes prêts :");
-  console.log("  Admin        admin@chonofit.local / Admin1234!");
-  console.log("  Réception    reception@chonofit.local / Reception1234!");
-  console.log("  Coach        soufiane@chonofit.local / Coach1234!");
-  console.log("  Coach        abdelkhalek@chonofit.local / Coach1234!");
+  console.log("  Admin        admin@chono.fitness / Admin1234!");
+  console.log("  Réception    reception@chono.fitness / Reception1234!");
+  console.log("  Coach        soufiane@chono.fitness / Coach1234!");
+  console.log("  Coach        abdelkhalek@chono.fitness / Coach1234!");
+}
+
+async function renameAccount(from: string, to: string) {
+  if (await prisma.user.findUnique({ where: { email: to } })) return;
+  await prisma.user.updateMany({ where: { email: from }, data: { email: to } });
 }
 
 main()
