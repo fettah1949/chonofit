@@ -111,6 +111,30 @@ export async function deleteTrainingGroup(id: string): Promise<ActionState> {
   };
 }
 
+export async function deleteEquipmentItem(id: string): Promise<ActionState> {
+  await requireAdmin();
+  const item = await prisma.equipmentItem.findUnique({
+    where: { id },
+    select: { id: true, packId: true },
+  });
+  if (!item) return { error: "Article introuvable." };
+
+  let packRemoved = false;
+  await prisma.$transaction(async (tx) => {
+    await tx.equipmentPurchase.deleteMany({ where: { itemId: id } });
+    await tx.equipmentItem.delete({ where: { id } });
+    const remaining = await tx.equipmentItem.count({ where: { packId: item.packId } });
+    if (remaining === 0) {
+      await tx.equipmentPack.delete({ where: { id: item.packId } });
+      packRemoved = true;
+    }
+  });
+
+  revalidatePath("/parametres/tenues");
+  revalidatePath("/adherents", "layout");
+  return { success: packRemoved ? "Article supprimé. Le pack est retiré." : "Article supprimé." };
+}
+
 export async function updateEquipmentItem(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");

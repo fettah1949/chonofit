@@ -29,7 +29,13 @@ export default async function EquipmentPage({
   const params = await searchParams;
   const periode = periods.some((item) => item.value === params.periode) ? (params.periode as GearPeriod) : "mois";
   const periodLabel = periods.find((item) => item.value === periode)?.label ?? "Ce mois";
-  const [settings, catalog, gear] = await Promise.all([getSettings(), loadCatalog(prisma), getGearStats(periode)]);
+  const [settings, catalog, gear, sales] = await Promise.all([
+    getSettings(),
+    loadCatalog(prisma),
+    getGearStats(periode),
+    prisma.equipmentPurchase.groupBy({ by: ["itemId"], _count: { _all: true } }),
+  ]);
+  const saleCount = new Map(sales.map((row) => [row.itemId, row._count._all]));
 
   return (
     <div className="space-y-6">
@@ -110,6 +116,7 @@ export default async function EquipmentPage({
           packId: item.packId,
           price: item.price,
           activityId: item.activityId,
+          saleCount: saleCount.get(item.id) ?? 0,
         }))}
       />
     </div>

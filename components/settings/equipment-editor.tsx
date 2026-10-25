@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { createEquipmentItem, updateEquipmentItem, updateEquipmentPack } from "@/actions/catalog";
+import { createEquipmentItem, deleteEquipmentItem, updateEquipmentItem, updateEquipmentPack } from "@/actions/catalog";
+import { ConfirmButton } from "@/components/shared/confirm-button";
 import { SubmitButton } from "@/components/shared/submit-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useActionToast } from "@/hooks/use-action-toast";
 
 type GearPack = { id: string; name: string; activityId: string; price: number };
-type GearItem = { id: string; name: string; packId: string; price: number; activityId: string };
+type GearItem = { id: string; name: string; packId: string; price: number; activityId: string; saleCount: number };
 
 export function EquipmentEditor({
   packs,
@@ -78,7 +79,7 @@ export function EquipmentEditor({
               </PackPriceForm>
               <div className="divide-y">
                 {packItems.map((item) => (
-                  <ItemRow key={item.id} item={item} currency={currency} />
+                  <ItemRow key={item.id} item={item} currency={currency} lastInPack={packItems.length === 1} />
                 ))}
               </div>
             </section>
@@ -237,7 +238,7 @@ function PackPriceForm({
   );
 }
 
-function ItemRow({ item, currency }: { item: GearItem; currency: string }) {
+function ItemRow({ item, currency, lastInPack }: { item: GearItem; currency: string; lastInPack: boolean }) {
   const [state, action] = useActionState(updateEquipmentItem, null);
   useActionToast(state);
   const [name, setName] = useState(item.name);
@@ -255,7 +256,19 @@ function ItemRow({ item, currency }: { item: GearItem; currency: string }) {
       <input type="hidden" name="id" value={item.id} />
       <Input name="name" value={name} onChange={(event) => setName(event.target.value)} aria-label="Nom de l'article" className="h-10 border-transparent bg-secondary/60" required />
       <PriceField name="price" value={price} onChange={setPrice} currency={currency} label="Prix" className="w-full" />
-      <SaveButton dirty={dirty} />
+      <div className="col-span-full flex flex-wrap justify-end gap-2 sm:col-span-1">
+        <SaveButton dirty={dirty} />
+        <ConfirmButton
+          variant="ghost"
+          size="sm"
+          title={`Supprimer ${item.name} ?`}
+          description={deleteDescription(item.name, item.saleCount, lastInPack)}
+          confirmLabel="Supprimer"
+          action={() => deleteEquipmentItem(item.id)}
+        >
+          <span className="text-red-700">Supprimer</span>
+        </ConfirmButton>
+      </div>
       {state?.error ? <p className="col-span-full rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p> : null}
     </form>
   );
@@ -292,6 +305,16 @@ function PriceField({
       <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">{currency}</span>
     </div>
   );
+}
+
+function deleteDescription(name: string, saleCount: number, lastInPack: boolean) {
+  const sales =
+    saleCount === 0
+      ? `${name} sera retiré du pack.`
+      : saleCount === 1
+        ? "Une vente sera retirée des fiches et des statistiques. Les paiements déjà encaissés restent."
+        : `${saleCount} ventes seront retirées des fiches et des statistiques. Les paiements déjà encaissés restent.`;
+  return lastInPack ? `${sales} Le pack sera retiré aussi, il ne contient que cet article.` : sales;
 }
 
 function SaveButton({ dirty }: { dirty: boolean }) {

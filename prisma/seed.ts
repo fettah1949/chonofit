@@ -12,7 +12,7 @@ async function main() {
     where: { email: "admin@chonofit.local" },
     update: {},
     create: {
-      name: "Alex Martin",
+      name: "Mohamed",
       email: "admin@chonofit.local",
       passwordHash: adminPassword,
       role: "ADMIN",
@@ -20,17 +20,45 @@ async function main() {
     },
   });
 
+  await prisma.user.updateMany({
+    where: { email: "admin@chonofit.local", name: { in: ["Alex Martin", "Omar"] } },
+    data: { name: "Mohamed" },
+  });
+
   await prisma.user.upsert({
     where: { email: "reception@chonofit.local" },
     update: {},
     create: {
-      name: "Inès Bernard",
+      name: "Réception",
       email: "reception@chonofit.local",
       passwordHash: receptionPassword,
       role: "RECEPTIONIST",
       mustChangePassword: true,
     },
   });
+
+  await prisma.user.updateMany({
+    where: { email: "reception@chonofit.local", name: "Inès Bernard" },
+    data: { name: "Réception" },
+  });
+
+  const coachPassword = await bcrypt.hash("Coach1234!", 10);
+  for (const coach of [
+    { name: "Soufiane", email: "soufiane@chonofit.local" },
+    { name: "Abdelkhalek", email: "abdelkhalek@chonofit.local" },
+  ]) {
+    await prisma.user.upsert({
+      where: { email: coach.email },
+      update: {},
+      create: {
+        name: coach.name,
+        email: coach.email,
+        passwordHash: coachPassword,
+        role: "COACH",
+        mustChangePassword: true,
+      },
+    });
+  }
 
   await prisma.gymSettings.upsert({
     where: { id: "default" },
@@ -56,11 +84,13 @@ async function main() {
     });
   }
 
-  await ensureCatalog(prisma);
+  await ensureCatalog(prisma, true);
 
   console.log("Comptes prêts :");
   console.log("  Admin        admin@chonofit.local / Admin1234!");
   console.log("  Réception    reception@chonofit.local / Reception1234!");
+  console.log("  Coach        soufiane@chonofit.local / Coach1234!");
+  console.log("  Coach        abdelkhalek@chonofit.local / Coach1234!");
 }
 
 main()
