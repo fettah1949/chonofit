@@ -5,7 +5,7 @@ import { startOfDay } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { paymentSchema, settleSchema } from "@/lib/validators";
-import { daysRemaining, formatDate, formatMoney, parseDateOnly, todayInput } from "@/lib/format";
+import { formatDate, formatMoney, parseDateOnly, periodRemainingLabel, todayInput } from "@/lib/format";
 import { searchMemberIds } from "@/lib/search";
 import { memberDisplayStatus } from "@/lib/status";
 import { getSettings } from "@/lib/maintenance";
@@ -67,13 +67,15 @@ function toPaymentMember(
     phone2: member.phone2 ?? "",
     photoPath: member.photoPath,
     status: memberDisplayStatus(member),
-    currentLabel: open ? `${open.plan.name} · ${daysRemaining(open.endDate)}` : "Aucun abonnement en cours",
+    currentLabel: open
+      ? `${open.plan.name} · ${periodRemainingLabel(open.startDate, open.endDate, open.status)}`
+      : "Aucun abonnement en cours",
     subscriptions: member.subscriptions.map((subscription) => ({
       id: subscription.id,
       name: subscription.plan.name,
       price: subscription.price,
       ended: ended(subscription),
-      detail: daysRemaining(subscription.endDate),
+      detail: periodRemainingLabel(subscription.startDate, subscription.endDate, subscription.status),
     })),
     openPayments: member.payments,
   };

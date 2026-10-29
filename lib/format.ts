@@ -1,6 +1,7 @@
 import {
   addDays,
   differenceInCalendarDays,
+  endOfDay,
   format,
   startOfDay,
 } from "date-fns";
@@ -72,6 +73,22 @@ export function daysRemaining(end: Date | string | null | undefined) {
   if (days === 0) return "Expire aujourd'hui";
   if (days === 1) return "Expire demain";
   return `${days} jours restants`;
+}
+
+export function periodRemainingLabel(
+  start: Date | string | null | undefined,
+  end: Date | string | null | undefined,
+  status?: string,
+) {
+  if ((!status || status === "ACTIVE") && start) {
+    const startDate = typeof start === "string" ? new Date(start) : start;
+    if (startDate > endOfDay(new Date())) {
+      const days = differenceInCalendarDays(startDate, startOfDay(new Date()));
+      if (days <= 1) return "Débute demain";
+      return `Débute dans ${days} jours`;
+    }
+  }
+  return daysRemaining(end);
 }
 
 export function durationLabel(days: number) {

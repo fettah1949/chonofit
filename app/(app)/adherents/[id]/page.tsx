@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ageInYears, ageRangeLabel, formatAge } from "@/lib/age";
-import { daysRemaining, formatDate, formatDateTime, formatMoney } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, periodRemainingLabel } from "@/lib/format";
 import { formatDays } from "@/lib/discipline";
 import { cn } from "@/lib/utils";
 import { INSURANCE_PRICE, METHOD_LABELS, seesMoney, type PaymentMethod } from "@/lib/constants";
@@ -97,10 +97,11 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             </div>
             {current ? (
               <div className="rounded-xl bg-accent p-4 sm:col-span-2">
-                <p className="text-sm text-muted-foreground">Abonnement en cours</p>
+                <p className="text-sm text-muted-foreground">{status === "UPCOMING" ? "Abonnement à venir" : "Abonnement en cours"}</p>
                 <p className="font-display text-xl font-semibold">{current.plan.name}</p>
                 <p className="text-sm">
-                  {formatDate(current.startDate)} → {current.endDate ? formatDate(current.endDate) : "Illimité"} · {daysRemaining(current.endDate)}
+                  {formatDate(current.startDate)} → {current.endDate ? formatDate(current.endDate) : "Illimité"} ·{" "}
+                  {periodRemainingLabel(current.startDate, current.endDate, current.status)}
                 </p>
               </div>
             ) : null}

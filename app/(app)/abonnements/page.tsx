@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { differenceInCalendarDays, startOfDay } from "date-fns";
+import { differenceInCalendarDays, endOfDay, startOfDay } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/maintenance";
 import { coverageByMember, listRenewals, pickLatest } from "@/lib/renewals";
@@ -14,7 +14,7 @@ import { MemberAvatar } from "@/components/members/member-avatar";
 import { Button } from "@/components/ui/button";
 import { Input, fieldClass } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { daysRemaining, formatDate, formatMoney } from "@/lib/format";
+import { daysRemaining, formatDate, formatMoney, periodRemainingLabel } from "@/lib/format";
 import { memberTextMatches } from "@/lib/member-match";
 import { isSubscriptionCurrent, memberDisplayStatus } from "@/lib/status";
 import { cn, withQuery } from "@/lib/utils";
@@ -26,7 +26,10 @@ export const metadata: Metadata = { title: "Abonnements" };
 
 const pageSize = 15;
 
-function periodNote(status: string, endDate: Date | null) {
+function periodNote(status: string, startDate: Date, endDate: Date | null) {
+  if (status === "ACTIVE" && startDate > endOfDay(new Date())) {
+    return { text: periodRemainingLabel(startDate, endDate, status), tone: "muted" as const };
+  }
   const closedEarly = status === "EXPIRED" && !!endDate && startOfDay(endDate) >= startOfDay(new Date());
   if (closedEarly) return { text: "Ne compte plus", tone: "muted" as const };
   if (status === "SUSPENDED") return { text: "Accès suspendu", tone: "warn" as const };
@@ -205,6 +208,7 @@ export default async function SubscriptionsPage({
           <select name="statut" defaultValue={statut} className={fieldClass}>
             <option value="">Tous les statuts</option>
             <option value="ACTIVE">Actif</option>
+            {historyView ? null : <option value="UPCOMING">À venir</option>}
             <option value="EXPIRED">Expiré</option>
             <option value="SUSPENDED">Suspendu</option>
           </select>
@@ -241,10 +245,11 @@ export default async function SubscriptionsPage({
             </TableHeader>
             <TableBody>
               {visibleSubscriptions.map((subscription) => {
-                const note = periodNote(subscription.status, subscription.endDate);
+                const note = periodNote(subscription.status, subscription.startDate, subscription.endDate);
+                const notStarted = subscription.status === "ACTIVE" && subscription.startDate > endOfDay(new Date());
                 const days = subscription.endDate ? differenceInCalendarDays(subscription.endDate, startOfDay(new Date())) : null;
-                const urgent = !historyView && subscription.status === "ACTIVE" && subscription.member.status !== "SUSPENDED" && days !== null && days <= 1;
-                const soon = !historyView && subscription.status === "ACTIVE" && subscription.member.status !== "SUSPENDED" && days !== null && days > 1 && days <= 3;
+                const urgent = !historyView && !notStarted && subscription.status === "ACTIVE" && subscription.member.status !== "SUSPENDED" && days !== null && days <= 1;
+                const soon = !historyView && !notStarted && subscription.status === "ACTIVE" && subscription.member.status !== "SUSPENDED" && days !== null && days > 1 && days <= 3;
                 const olderCount = "olderCount" in subscription && typeof subscription.olderCount === "number" ? subscription.olderCount : 0;
                 const badge =
                   !historyView && "displayStatus" in subscription && typeof subscription.displayStatus === "string"

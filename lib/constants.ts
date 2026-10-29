@@ -1,7 +1,7 @@
 export const ROLES = ["ADMIN", "RECEPTIONIST", "COACH"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const DISPLAY_STATUSES = ["ACTIVE", "EXPIRED", "SUSPENDED"] as const;
+export const DISPLAY_STATUSES = ["ACTIVE", "UPCOMING", "EXPIRED", "SUSPENDED"] as const;
 export type DisplayStatus = (typeof DISPLAY_STATUSES)[number];
 
 export const INSURANCE_PRICE = 100;
@@ -20,9 +20,16 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const STATUS_LABELS: Record<DisplayStatus, string> = {
   ACTIVE: "Actif",
+  UPCOMING: "À venir",
   EXPIRED: "Expiré",
   SUSPENDED: "Suspendu",
 };
+
+export function inactiveAccessSentence(name: string, status: string) {
+  if (status === "SUSPENDED") return `${name} est suspendu.`;
+  if (status === "UPCOMING") return `L'abonnement de ${name} n'a pas encore commencé.`;
+  return `${name} est expiré.`;
+}
 
 export const METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Espèces",

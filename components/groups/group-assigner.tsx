@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { inactiveAccessSentence } from "@/lib/constants";
 import { missedLastSessions } from "@/lib/coach-roster";
 import { toInputDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -424,7 +425,7 @@ export function GroupAssigner({
             <DialogTitle>Abonnement non actif</DialogTitle>
             <DialogDescription>
               {confirmMember
-                ? `${confirmMember.firstName} ${confirmMember.lastName} est ${confirmMember.status === "SUSPENDED" ? "suspendu" : "expiré"}. Enregistrer la présence quand même ?`
+                ? `${inactiveAccessSentence(`${confirmMember.firstName} ${confirmMember.lastName}`, confirmMember.status)} Enregistrer la présence quand même ?`
                 : ""}
             </DialogDescription>
           </DialogHeader>

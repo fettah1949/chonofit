@@ -50,6 +50,7 @@ export async function searchMembersForCheckin(query: string) {
       photoPath: member.photoPath,
       status: memberDisplayStatus(member),
       planName: current?.plan.name ?? "Sans abonnement",
+      startDate: current?.startDate?.toISOString() ?? null,
       endDate: current?.endDate?.toISOString() ?? null,
       checkedInAt: member.checkIns[0]?.checkedInAt.toISOString() ?? null,
     }];

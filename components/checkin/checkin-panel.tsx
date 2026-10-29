@@ -18,7 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { daysRemaining } from "@/lib/format";
+import { daysRemaining, periodRemainingLabel } from "@/lib/format";
+import { inactiveAccessSentence } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 export type CheckinMember = {
@@ -30,6 +31,7 @@ export type CheckinMember = {
   photoPath: string | null;
   status: string;
   planName: string;
+  startDate: string | null;
   endDate: string | null;
   checkedInAt: string | null;
 };
@@ -68,7 +70,10 @@ function MemberRow({
         </div>
         <p className="truncate text-sm text-muted-foreground">
           {member.phone}
-          {member.phone2 ? ` · ${member.phone2}` : ""} · {member.planName} · {daysRemaining(member.endDate)}
+          {member.phone2 ? ` · ${member.phone2}` : ""} · {member.planName} ·{" "}
+          {member.status === "UPCOMING"
+            ? periodRemainingLabel(member.startDate, member.endDate, "ACTIVE")
+            : daysRemaining(member.endDate)}
         </p>
       </div>
       {member.checkedInAt ? (
@@ -242,7 +247,7 @@ export function CheckinPanel({ members, sessions }: { members: CheckinMember[]; 
             <DialogTitle>Abonnement non actif</DialogTitle>
             <DialogDescription>
               {confirmMember
-                ? `${confirmMember.firstName} ${confirmMember.lastName} est ${confirmMember.status === "SUSPENDED" ? "suspendu" : "expiré"}. Enregistrer l'entrée quand même ?`
+                ? `${inactiveAccessSentence(`${confirmMember.firstName} ${confirmMember.lastName}`, confirmMember.status)} Enregistrer l'entrée quand même ?`
                 : ""}
             </DialogDescription>
           </DialogHeader>

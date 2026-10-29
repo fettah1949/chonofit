@@ -13,6 +13,13 @@ export function isSubscriptionCurrent(subscription: StatusInput, now = new Date(
   return new Date(subscription.endDate) >= startOfDay(now);
 }
 
+function isSubscriptionUpcoming(subscription: StatusInput, now = new Date()) {
+  if (subscription.status !== "ACTIVE" || !subscription.startDate) return false;
+  if (new Date(subscription.startDate) <= endOfDay(now)) return false;
+  if (subscription.endDate && new Date(subscription.endDate) < startOfDay(now)) return false;
+  return true;
+}
+
 export function memberDisplayStatus(
   member: { status: string; subscriptions: StatusInput[] },
   now = new Date(),
@@ -23,6 +30,9 @@ export function memberDisplayStatus(
   }
   if (member.subscriptions.some((subscription) => subscription.status === "SUSPENDED")) {
     return "SUSPENDED" as const;
+  }
+  if (member.subscriptions.some((subscription) => isSubscriptionUpcoming(subscription, now))) {
+    return "UPCOMING" as const;
   }
   return "EXPIRED" as const;
 }

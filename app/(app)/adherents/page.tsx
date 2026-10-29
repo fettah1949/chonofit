@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { differenceInCalendarDays, startOfDay } from "date-fns";
+import { differenceInCalendarDays, endOfDay, startOfDay } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { memberTextMatches } from "@/lib/member-match";
 import { currentSubscription, memberDisplayStatus } from "@/lib/status";
@@ -12,7 +12,7 @@ import { InsuranceExportLinks } from "@/components/members/insurance-export-link
 import { MemberAvatar } from "@/components/members/member-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { daysRemaining, formatDate } from "@/lib/format";
+import { formatDate, periodRemainingLabel } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 import { cn, withQuery } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ export const metadata: Metadata = { title: "Adhérents" };
 const filters = [
   { value: "", label: "Tous" },
   { value: "ACTIVE", label: "Actifs" },
+  { value: "UPCOMING", label: "À venir" },
   { value: "EXPIRED", label: "Expirés" },
   { value: "SUSPENDED", label: "Suspendus" },
 ];
@@ -116,9 +117,13 @@ export default async function MembersPage({
         <div className="divide-y overflow-hidden rounded-2xl border bg-card">
           {items.map((member) => {
             const activities = member.activities.map((row) => row.activity.name).join(", ");
+            const start = member.current?.startDate ?? null;
             const end = member.current?.endDate ?? null;
+            const notStarted = Boolean(start && member.current?.status === "ACTIVE" && new Date(start) > endOfDay(new Date()));
             const daysLeft = end ? differenceInCalendarDays(end, startOfDay(new Date())) : null;
-            const soon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
+            const soon = !notStarted && daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
+            const when = member.current ? periodRemainingLabel(start, end, member.current.status) : null;
+            const period = !member.current ? null : notStarted ? `${formatDate(start)} · ${when}` : end ? `${formatDate(end)} · ${when}` : "Illimité";
             return (
               <Link key={member.id} href={`/adherents/${member.id}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-secondary/70">
                 <MemberAvatar
@@ -139,15 +144,13 @@ export default async function MembersPage({
                     {activities ? ` · ${activities}` : ""}
                   </p>
                   <p className={cn("truncate text-sm sm:hidden", soon ? "text-amber-800" : "text-muted-foreground")}>
-                    {member.current
-                      ? `${member.current.plan.name} · ${end ? formatDate(end) : "Illimité"} · ${daysRemaining(end)}`
-                      : "Aucun abonnement"}
+                    {member.current ? `${member.current.plan.name} · ${period}` : "Aucun abonnement"}
                   </p>
                 </div>
                 <div className="hidden shrink-0 text-right text-sm sm:block">
                   <p className="font-medium">{member.current?.plan.name ?? "Aucun abonnement"}</p>
                   <p className={cn(soon ? "text-amber-800" : "text-muted-foreground")}>
-                    {member.current ? (end ? `${formatDate(end)} · ${daysRemaining(end)}` : "Illimité") : "—"}
+                    {period ?? "—"}
                   </p>
                 </div>
               </Link>
