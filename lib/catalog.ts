@@ -11,9 +11,9 @@ const CATALOG = {
     { code: "KICK", name: "Kickboxing", sortOrder: 2 },
   ],
   groups: [
-    { code: "KARATE-1", activity: "KARATE", name: "Séance 1", days: KARATE_YOUNG, ageMin: 7, ageMax: 10, sortOrder: 1 },
+    { code: "KARATE-1", activity: "KARATE", name: "Séance 1", days: KARATE_YOUNG, ageMin: 6, ageMax: 10, sortOrder: 1 },
     { code: "KARATE-2", activity: "KARATE", name: "Séance 2", days: KARATE_OLDER, ageMin: 11, ageMax: 15, sortOrder: 2 },
-    { code: "KICK-1", activity: "KICK", name: "Séance 3", days: KICK_YOUNG, ageMin: 7, ageMax: 10, sortOrder: 1 },
+    { code: "KICK-1", activity: "KICK", name: "Séance 3", days: KICK_YOUNG, ageMin: 6, ageMax: 10, sortOrder: 1 },
     { code: "KICK-2", activity: "KICK", name: "Séance 4", days: KICK_OLDER, ageMin: 11, ageMax: 15, sortOrder: 2 },
   ],
   packs: [
