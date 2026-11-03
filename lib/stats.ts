@@ -35,7 +35,7 @@ export async function getDashboardData(currency: string) {
   const renewals = await listRenewals();
   const upcoming = renewals.filter((subscription) => subscription.endDate && subscription.endDate >= todayStart);
 
-  const [activeSubscriptions, payments, checkIns, members, blockedCandidates, openAdvances] = await Promise.all([
+  const [activeSubscriptions, payments, shopSales, checkIns, members, blockedCandidates, openAdvances] = await Promise.all([
     prisma.subscription.findMany({
       where: {
         status: "ACTIVE",
@@ -54,6 +54,10 @@ export async function getDashboardData(currency: string) {
         subscriptionId: true,
         member: { select: { id: true, firstName: true, lastName: true } },
       },
+    }),
+    prisma.shopSale.findMany({
+      where: { soldAt: { gte: chartStart } },
+      select: { soldAt: true, unitPrice: true, quantity: true, method: true },
     }),
     prisma.checkIn.findMany({
       where: { checkedInAt: { gte: todayStart, lte: todayEnd } },
@@ -150,19 +154,27 @@ export async function getDashboardData(currency: string) {
     const bucket = monthIndex.get(`${date.getFullYear()}-${date.getMonth()}`);
     if (bucket) bucket.members += 1;
   }
-  for (const payment of payments) {
+  const shopLines = shopSales.map((sale) => ({
+    paidAt: sale.soldAt,
+    amount: roundMoney(sale.unitPrice * sale.quantity),
+    method: sale.method,
+  }));
+  for (const payment of [...payments, ...shopLines]) {
     const date = payment.paidAt;
     const bucket = monthIndex.get(`${date.getFullYear()}-${date.getMonth()}`);
     if (bucket) bucket.revenue = roundMoney(bucket.revenue + payment.amount);
   }
 
   const todayPayments = payments.filter((payment) => payment.paidAt >= todayStart && payment.paidAt <= todayEnd);
-  const cashPayments = todayPayments.filter((payment) => payment.method === "CASH");
+  const todayShop = shopLines.filter((sale) => sale.paidAt >= todayStart && sale.paidAt <= todayEnd);
+  const todayReceipts = [...todayPayments, ...todayShop];
+  const cashPayments = todayReceipts.filter((payment) => payment.method === "CASH");
   const otherBuckets = new Map<string, number>();
-  for (const payment of todayPayments) {
+  for (const payment of todayReceipts) {
     if (payment.method === "CASH") continue;
     otherBuckets.set(payment.method, roundMoney((otherBuckets.get(payment.method) ?? 0) + payment.amount));
   }
+  const monthShop = shopLines.filter((sale) => sale.paidAt >= monthStart && sale.paidAt <= monthEnd);
   const monthName = format(now, "MMMM", { locale: fr });
 
   return {
@@ -172,12 +184,15 @@ export async function getDashboardData(currency: string) {
     expiringHint: expiringHint(upcoming, now),
     expiring: renewals,
     monthLabel: monthName.charAt(0).toUpperCase() + monthName.slice(1),
-    monthRevenue: roundMoney(monthPayments.reduce((sum, payment) => sum + payment.amount, 0)),
+    monthRevenue: roundMoney(
+      monthPayments.reduce((sum, payment) => sum + payment.amount, 0) +
+        monthShop.reduce((sum, sale) => sum + sale.amount, 0),
+    ),
     duplicateReceipts: duplicateReceipts(monthPayments, priorCounts),
     today: {
       cash: roundMoney(cashPayments.reduce((sum, payment) => sum + payment.amount, 0)),
       cashCount: cashPayments.length,
-      receiptCount: todayPayments.length,
+      receiptCount: todayReceipts.length,
       others: OTHER_METHODS.flatMap((method) => {
         const amount = otherBuckets.get(method) ?? 0;
         return amount > 0 ? [{ method, amount }] : [];
@@ -460,6 +475,41 @@ export async function getGearStats(period: GearPeriod = "mois") {
   };
 }
 
+export async function getShopStats() {
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
+  const [sales, products] = await Promise.all([
+    prisma.shopSale.findMany({
+      where: { soldAt: { gte: monthStart, lte: monthEnd } },
+      select: { soldAt: true, unitPrice: true, quantity: true },
+    }),
+    prisma.shopProduct.findMany({ select: { stock: true } }),
+  ]);
+  let monthAmount = 0;
+  let monthCount = 0;
+  let todayAmount = 0;
+  let todayCount = 0;
+  for (const sale of sales) {
+    const total = roundMoney(sale.unitPrice * sale.quantity);
+    monthAmount = roundMoney(monthAmount + total);
+    monthCount += sale.quantity;
+    if (sale.soldAt >= todayStart && sale.soldAt <= todayEnd) {
+      todayAmount = roundMoney(todayAmount + total);
+      todayCount += sale.quantity;
+    }
+  }
+  return {
+    monthAmount,
+    monthCount,
+    todayAmount,
+    todayCount,
+    stock: products.reduce((sum, product) => sum + product.stock, 0),
+  };
+}
+
 function inGearPeriod(date: Date, bound: { start: Date | null; end: Date | null }) {
   if (bound.start && date < bound.start) return false;
   if (bound.end && date > bound.end) return false;
@@ -493,7 +543,7 @@ export function statMonth(mois: string | undefined, annee: string | undefined, n
 }
 
 export async function getChosenMonthStats(start: Date, end: Date) {
-  const [subscriptions, purchases, firstSubscription, firstPurchase] = await Promise.all([
+  const [subscriptions, purchases, shopSales, firstSubscription, firstPurchase, firstShopSale] = await Promise.all([
     prisma.subscription.findMany({
       where: { startDate: { gte: start, lte: end } },
       select: { price: true, plan: { select: { id: true, name: true } } },
@@ -505,8 +555,17 @@ export async function getChosenMonthStats(start: Date, end: Date) {
         item: { select: { id: true, name: true, activity: { select: { name: true } } } },
       },
     }),
+    prisma.shopSale.findMany({
+      where: { soldAt: { gte: start, lte: end } },
+      select: {
+        quantity: true,
+        unitPrice: true,
+        product: { select: { id: true, name: true } },
+      },
+    }),
     prisma.subscription.findFirst({ orderBy: { startDate: "asc" }, select: { startDate: true } }),
     prisma.equipmentPurchase.findFirst({ orderBy: { purchasedAt: "asc" }, select: { purchasedAt: true } }),
+    prisma.shopSale.findFirst({ orderBy: { soldAt: "asc" }, select: { soldAt: true } }),
   ]);
 
   const plans = new Map<string, { id: string; name: string; count: number; amount: number }>();
@@ -542,9 +601,28 @@ export async function getChosenMonthStats(start: Date, end: Date) {
     items.set(purchase.item.id, current);
   }
 
+  const shopItems = new Map<string, { id: string; name: string; count: number; amount: number }>();
+  let shopAmount = 0;
+  let shopCount = 0;
+  for (const sale of shopSales) {
+    const line = roundMoney(sale.unitPrice * sale.quantity);
+    shopCount += sale.quantity;
+    shopAmount = roundMoney(shopAmount + line);
+    const current = shopItems.get(sale.product.id) ?? {
+      id: sale.product.id,
+      name: sale.product.name,
+      count: 0,
+      amount: 0,
+    };
+    current.count += sale.quantity;
+    current.amount = roundMoney(current.amount + line);
+    shopItems.set(sale.product.id, current);
+  }
+
   const firstYear = Math.min(
     firstSubscription?.startDate.getFullYear() ?? new Date().getFullYear(),
     firstPurchase?.purchasedAt.getFullYear() ?? new Date().getFullYear(),
+    firstShopSale?.soldAt.getFullYear() ?? new Date().getFullYear(),
     new Date().getFullYear() - 2,
   );
   const years = Array.from({ length: new Date().getFullYear() - firstYear + 1 }, (_, index) => new Date().getFullYear() - index);
@@ -560,6 +638,11 @@ export async function getChosenMonthStats(start: Date, end: Date) {
       count: gearCount,
       amount: gearAmount,
       items: [...items.values()].sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name, "fr")),
+    },
+    shop: {
+      count: shopCount,
+      amount: shopAmount,
+      items: [...shopItems.values()].sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name, "fr")),
     },
   };
 }

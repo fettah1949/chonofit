@@ -13,7 +13,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { ageFromInput, ageRangeLabel, formatAge, groupAgeMessage, memberAgeError } from "@/lib/age";
 import { daysRemaining, formatDate, formatMoney, parseDateOnly, toInputDate, todayInput } from "@/lib/format";
 import { GUARDIAN_RELATIONS, INSURANCE_PRICE, METHOD_LABELS, PAYMENT_METHODS } from "@/lib/constants";
-import { gearCharge, packQuote } from "@/lib/gear";
+import { gearCharge, packUpgradeDue } from "@/lib/gear";
 import { cn, roundMoney } from "@/lib/utils";
 import type { ActionState } from "@/lib/action-state";
 
@@ -31,6 +31,7 @@ export type CatalogItem = { id: string; name: string; packId: string; activityId
 export type CatalogPlan = { id: string; name: string; price: number; durationDays: number };
 export type CatalogPurchase = {
   id: string;
+  itemId: string;
   itemName: string;
   packName: string;
   unitPrice: number;
@@ -141,12 +142,32 @@ export function MemberForm({
     : null;
   const visibleItems = items.filter((item) => activityIds.includes(item.activityId));
   const visiblePacks = packs.filter((pack) => visibleItems.some((item) => item.packId === pack.id));
+  const paidByItem = useMemo(() => {
+    const paid = new Map<string, number>();
+    for (const purchase of purchases) {
+      paid.set(purchase.itemId, roundMoney((paid.get(purchase.itemId) ?? 0) + purchase.unitPrice));
+    }
+    return paid;
+  }, [purchases]);
+  const packUpgrades = visiblePacks.flatMap((pack) => {
+    const packItems = visibleItems.filter((item) => item.packId === pack.id);
+    const upgrade = packUpgradeDue(
+      packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
+      pack.price,
+      itemIds,
+      member.ownedItemIds,
+      paidByItem,
+    );
+    return upgrade ? [{ id: pack.id, name: pack.name, price: pack.price, ...upgrade }] : [];
+  });
+  const upgradeDue = roundMoney(packUpgrades.reduce((sum, upgrade) => sum + Math.max(0, upgrade.due), 0));
   const newTotal = gearCharge(
     visibleItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
     visiblePacks.map((pack) => ({ id: pack.id, price: pack.price })),
     itemIds,
     member.ownedItemIds,
   ).total;
+  const gearToCollect = packUpgrades.length > 0 ? upgradeDue : newTotal;
   const cover = insuranceLabel(hasInsurance, insuranceStart, insuranceEnd);
   const selectedPlan = plans.find((plan) => plan.id === planId) ?? null;
   const signup = !member.id;
@@ -176,12 +197,9 @@ export function MemberForm({
     if (next.length > 0) setActivityHint(false);
     setActivityIds(next);
     setGroupIds((selected) => selected.filter((groupId) => groups.some((group) => group.id === groupId && next.includes(group.activityId))));
-    setItemIds((selected) => {
-      const stillThere = (itemId: string) => items.some((item) => item.id === itemId && next.includes(item.activityId));
-      const keptOwned = member.ownedItemIds.filter(stillThere);
-      const keptNew = selected.filter((itemId) => !owned.has(itemId) && stillThere(itemId));
-      return [...new Set([...keptOwned, ...keptNew])];
-    });
+    setItemIds((selected) =>
+      selected.filter((itemId) => items.some((item) => item.id === itemId && next.includes(item.activityId))),
+    );
   }
 
   function toggleGroup(id: string) {
@@ -202,13 +220,12 @@ export function MemberForm({
   }
 
   function toggleItem(id: string) {
-    if (owned.has(id)) return;
     setItemIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
   }
 
   function togglePack(packId: string) {
-    const packItems = visibleItems.filter((item) => item.packId === packId && !owned.has(item.id));
-    const allOn = packItems.every((item) => itemIds.includes(item.id));
+    const packItems = visibleItems.filter((item) => item.packId === packId);
+    const allOn = packItems.length > 0 && packItems.every((item) => itemIds.includes(item.id));
     setItemIds((current) => {
       const next = new Set(current);
       for (const item of packItems) {
@@ -499,9 +516,12 @@ export function MemberForm({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <SectionTitle>Tenues</SectionTitle>
-            <p className="mt-1 text-sm text-muted-foreground">Le pack complet est facturé à son prix. Sinon, chaque article est facturé à l'unité.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Le pack complet est facturé à son prix. Sinon, chaque article est facturé à l'unité.
+              {member.id ? " Décochez un article enregistré par erreur, ou reprenez le pack complet." : ""}
+            </p>
           </div>
-          <p className="font-display text-2xl font-semibold">{formatMoney(newTotal, currency)}</p>
+          <p className="font-display text-2xl font-semibold">{formatMoney(gearToCollect, currency)}</p>
         </div>
         {activityIds.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">Choisissez d'abord une activité.</p>
@@ -509,41 +529,66 @@ export function MemberForm({
           <div className="mt-4 space-y-5">
             {visiblePacks.map((pack) => {
               const packItems = visibleItems.filter((item) => item.packId === pack.id);
-              const quote = packQuote(
-                packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
-                pack.price,
-                itemIds,
-                member.ownedItemIds,
-              );
-              const canTakePack = packItems.length > 1 && packItems.every((item) => !owned.has(item.id));
+              const packSelected = packItems.length > 1 && packItems.every((item) => itemIds.includes(item.id));
               return (
                 <div key={pack.id} className="space-y-2">
                   <p className="font-medium">{pack.name}</p>
-                  {canTakePack ? (
+                  {packItems.length > 1 ? (
                     <Choice
-                      checked={quote.complete}
+                      checked={packSelected}
                       label="Pack complet"
                       detail={formatMoney(pack.price, currency)}
                       onChange={() => togglePack(pack.id)}
                     />
                   ) : null}
                   <div className="grid gap-2">
-                    {packItems.map((item) => (
-                      <Choice
-                        key={item.id}
-                        checked={itemIds.includes(item.id)}
-                        disabled={owned.has(item.id)}
-                        label={item.name}
-                        detail={owned.has(item.id) ? "Déjà acheté" : quote.complete ? "Inclus dans le pack" : formatMoney(item.price, currency)}
-                        onChange={() => toggleItem(item.id)}
-                      />
-                    ))}
+                    {packItems.map((item) => {
+                      const kept = itemIds.includes(item.id) && owned.has(item.id) && !packSelected;
+                      return (
+                        <Choice
+                          key={item.id}
+                          checked={itemIds.includes(item.id)}
+                          label={item.name}
+                          detail={packSelected ? "Inclus dans le pack" : kept ? "Déjà acheté" : formatMoney(item.price, currency)}
+                          onChange={() => toggleItem(item.id)}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+        {packUpgrades.length > 0 ? (
+          <div className="mt-4 space-y-3 rounded-xl bg-secondary p-3">
+            {packUpgrades.map((upgrade) => (
+              <p key={upgrade.id} className="text-sm">
+                {upgrade.name} passe à {formatMoney(upgrade.price, currency)}. Déjà encaissé {formatMoney(upgrade.already, currency)}.
+                {upgrade.due > 0 ? ` Reste ${formatMoney(upgrade.due, currency)}.` : " Rien à encaisser en plus."}
+              </p>
+            ))}
+            {upgradeDue > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                <input type="hidden" name="payMethod" value={payMethod} />
+                {PAYMENT_METHODS.map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    aria-pressed={payMethod === method}
+                    className={cn(
+                      "h-10 rounded-xl border px-3 text-sm font-medium",
+                      payMethod === method ? "border-primary bg-accent" : "bg-card hover:bg-secondary",
+                    )}
+                    onClick={() => setPayMethod(method)}
+                  >
+                    {METHOD_LABELS[method]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {purchases.length > 0 ? (
           <div className="mt-6 border-t pt-4">
             <p className="text-sm font-medium">Historique des achats</p>

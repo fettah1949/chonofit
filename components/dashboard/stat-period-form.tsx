@@ -9,6 +9,14 @@ import { cn, withQuery } from "@/lib/utils";
 
 type PlanLine = { id: string; name: string; count: number; amount: number };
 type GearLine = { id: string; name: string; activity: string; count: number; amount: number };
+type ShopLine = { id: string; name: string; count: number; amount: number };
+type StatSubject = "abonnements" | "tenues" | "boutique";
+
+const SUBJECTS: { value: StatSubject; label: string }[] = [
+  { value: "abonnements", label: "Abonnements" },
+  { value: "tenues", label: "Tenues" },
+  { value: "boutique", label: "Boutique" },
+];
 
 export function MonthStats({
   sujet,
@@ -20,8 +28,9 @@ export function MonthStats({
   currency,
   subscriptions,
   gear,
+  shop,
 }: {
-  sujet: "abonnements" | "tenues";
+  sujet: StatSubject;
   month: number;
   year: number;
   label: string;
@@ -30,13 +39,14 @@ export function MonthStats({
   currency: string;
   subscriptions: { count: number; amount: number; plans: PlanLine[] };
   gear: { count: number; amount: number; items: GearLine[] };
+  shop: { count: number; amount: number; items: ShopLine[] };
 }) {
   const [pending, startTransition] = useTransition();
-  const [view, setView] = useState({ sujet, month, year, label, subscriptions, gear });
+  const [view, setView] = useState({ sujet, month, year, label, subscriptions, gear, shop });
   const [monthValue, setMonthValue] = useState(String(month));
   const [yearValue, setYearValue] = useState(String(year));
 
-  function apply(nextSujet: "abonnements" | "tenues", mois: string, annee: string, push = true) {
+  function apply(nextSujet: StatSubject, mois: string, annee: string, push = true) {
     startTransition(async () => {
       const result = await loadMonthStats(nextSujet, mois, annee);
       if (!result) return;
@@ -55,7 +65,9 @@ export function MonthStats({
   useEffect(() => {
     function onPopState() {
       const params = new URLSearchParams(window.location.search);
-      apply(params.get("sujet") === "tenues" ? "tenues" : "abonnements", params.get("mois") ?? String(month), params.get("annee") ?? String(year), false);
+      const raw = params.get("sujet");
+      const nextSujet: StatSubject = raw === "tenues" || raw === "boutique" ? raw : "abonnements";
+      apply(nextSujet, params.get("mois") ?? String(month), params.get("annee") ?? String(year), false);
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -66,7 +78,7 @@ export function MonthStats({
     apply(view.sujet, monthValue, yearValue);
   }
 
-  const subscriptionsView = view.sujet === "abonnements";
+  const subject = view.sujet;
 
   return (
     <>
@@ -108,26 +120,26 @@ export function MonthStats({
         </form>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {(["abonnements", "tenues"] as const).map((value) => {
-          const pressed = view.sujet === value;
+        {SUBJECTS.map((item) => {
+          const pressed = view.sujet === item.value;
           return (
             <button
-              key={value}
+              key={item.value}
               type="button"
               aria-pressed={pressed}
               disabled={pending}
-              onClick={() => apply(value, monthValue, yearValue)}
+              onClick={() => apply(item.value, monthValue, yearValue)}
               className={cn(
                 "h-10 rounded-xl border px-3 text-sm font-medium",
                 pressed ? "border-primary bg-accent" : "bg-background",
               )}
             >
-              {value === "abonnements" ? "Abonnements" : "Tenues"}
+              {item.label}
             </button>
           );
         })}
       </div>
-      {subscriptionsView ? (
+      {subject === "abonnements" ? (
         <Figures
           label="Formules commencées"
           amount={view.subscriptions.amount}
@@ -141,7 +153,7 @@ export function MonthStats({
             <p className="mt-4 text-sm text-muted-foreground">Aucun abonnement commencé sur cette période.</p>
           )}
         </Figures>
-      ) : (
+      ) : subject === "tenues" ? (
         <Figures
           label="Tenues vendues"
           amount={view.gear.amount}
@@ -153,6 +165,20 @@ export function MonthStats({
             <SaleBars items={view.gear.items} currency={currency} noun="pièce" />
           ) : (
             <p className="mt-4 text-sm text-muted-foreground">Aucune tenue vendue sur cette période.</p>
+          )}
+        </Figures>
+      ) : (
+        <Figures
+          label="Boutique"
+          amount={view.shop.amount}
+          countLabel={countLabel(view.shop.count, "pièce", "pièces", "Aucune pièce")}
+          currency={currency}
+          hint="Produits du rayon vendus dans le mois choisi. Le stock restant n'entre pas dans ce total."
+        >
+          {view.shop.items.length > 0 ? (
+            <SaleBars items={view.shop.items} currency={currency} noun="pièce" />
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">Aucune vente de la boutique sur cette période.</p>
           )}
         </Figures>
       )}

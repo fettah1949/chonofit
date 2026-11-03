@@ -48,7 +48,23 @@ function isCompletePack(packItems: GearLine[], freshIds: Set<string>) {
   return packItems.length > 1 && packItems.every((item) => freshIds.has(item.id));
 }
 
-function allocatePackPrice(items: GearLine[], packPrice: number) {
+export function packUpgradeDue(
+  packItems: GearLine[],
+  packPrice: number,
+  selectedIds: string[],
+  ownedIds: string[],
+  paidByItem: ReadonlyMap<string, number>,
+) {
+  if (packItems.length < 2) return null;
+  const selected = new Set(selectedIds);
+  if (!packItems.every((item) => selected.has(item.id))) return null;
+  const owned = new Set(ownedIds);
+  if (!packItems.some((item) => owned.has(item.id)) || !packItems.some((item) => !owned.has(item.id))) return null;
+  const already = roundMoney(packItems.reduce((sum, item) => sum + (paidByItem.get(item.id) ?? 0), 0));
+  return { due: roundMoney(packPrice - already), already };
+}
+
+export function allocatePackPrice(items: GearLine[], packPrice: number) {
   const result = new Map<string, number>();
   if (items.length === 0) return result;
   const target = roundMoney(packPrice);

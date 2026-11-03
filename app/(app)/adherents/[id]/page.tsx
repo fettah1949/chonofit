@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/maintenance";
 import { memberDisplayStatus } from "@/lib/status";
+import { AddGear } from "@/components/members/add-gear";
 import { MemberActions } from "@/components/members/member-actions";
 import { ContinuePayment } from "@/components/payments/continue-payment";
 import { MemberAvatar } from "@/components/members/member-avatar";
@@ -33,11 +34,37 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         activities: { include: { activity: true } },
         groups: { include: { group: { include: { activity: true } } } },
         equipmentPurchases: { include: { item: true }, orderBy: { purchasedAt: "desc" } },
+        shopSales: { include: { product: true }, orderBy: { soldAt: "desc" } },
       },
     }),
     getSettings(),
   ]);
   if (!member) notFound();
+
+  const activityIds = member.activities.map((row) => row.activityId);
+  const gearPacks = await prisma.equipmentPack.findMany({
+    where: activityIds.length > 0 ? { activityId: { in: activityIds } } : undefined,
+    orderBy: [{ activity: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    include: {
+      activity: { select: { name: true } },
+      items: { orderBy: { sortOrder: "asc" } },
+    },
+  });
+  const ownedGear = new Set(member.equipmentPurchases.map((purchase) => purchase.itemId));
+  const gearChoices = gearPacks
+    .filter((pack) => pack.items.some((item) => !ownedGear.has(item.id)))
+    .map((pack) => ({
+      id: pack.id,
+      name: pack.name,
+      activityName: pack.activity.name,
+      price: pack.price,
+      items: pack.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        owned: ownedGear.has(item.id),
+      })),
+    }));
 
   const status = memberDisplayStatus(member);
   const current = member.subscriptions.find((subscription) => subscription.status === "ACTIVE") ?? member.subscriptions[0];
@@ -171,8 +198,11 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between gap-3">
             <CardTitle>Tenues achetées</CardTitle>
+            {user.role !== "COACH" && gearChoices.length > 0 ? (
+              <AddGear memberId={member.id} currency={settings.currency} packs={gearChoices} />
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {member.equipmentPurchases.length === 0 ? (
@@ -190,6 +220,26 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             )}
           </CardContent>
         </Card>
+        {member.shopSales.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Boutique</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {member.shopSales.map((sale) => (
+                <p key={sale.id} className="flex items-center justify-between gap-3">
+                  <Link href={`/boutique/${sale.id}/recu`} className="underline">
+                    {sale.product.name} × {sale.quantity}
+                  </Link>
+                  <span className="text-muted-foreground">
+                    {money ? `${formatMoney(sale.unitPrice * sale.quantity, settings.currency)} · ` : ""}
+                    {formatDate(sale.soldAt)}
+                  </span>
+                </p>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
       </section>
       <section className="grid gap-4 xl:grid-cols-3">
         <HistoryCard title="Abonnements">

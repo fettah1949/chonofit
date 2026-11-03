@@ -10,7 +10,7 @@ import { deleteUpload, safeUploadPath } from "@/lib/uploads";
 import { uniqueMessage } from "@/lib/db-errors";
 import { nextReceiptNumber } from "@/lib/receipts";
 import { INSURANCE_PRICE, isPaymentMethod } from "@/lib/constants";
-import { gearCharge } from "@/lib/gear";
+import { allocatePackPrice, gearCharge, packUpgradeDue } from "@/lib/gear";
 import { roundMoney } from "@/lib/utils";
 import type { ActionState } from "@/lib/action-state";
 
@@ -102,6 +102,55 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
         });
       }
 
+      const previousPurchases = id
+        ? await tx.equipmentPurchase.findMany({ where: { memberId: saved.id }, select: { itemId: true, unitPrice: true } })
+        : [];
+      const paidByItem = new Map<string, number>();
+      for (const purchase of previousPurchases) {
+        paidByItem.set(purchase.itemId, roundMoney((paidByItem.get(purchase.itemId) ?? 0) + purchase.unitPrice));
+      }
+      const previouslyOwned = [...paidByItem.keys()];
+
+      if (id) {
+        await tx.equipmentPurchase.deleteMany({
+          where: discipline.itemIds.length
+            ? { memberId: saved.id, itemId: { notIn: discipline.itemIds } }
+            : { memberId: saved.id },
+        });
+      }
+
+      const upgradedPacks = new Set<string>();
+      if (id && discipline.itemIds.length > 0) {
+        const selectedItems = await tx.equipmentItem.findMany({ where: { id: { in: discipline.itemIds } } });
+        const packIds = [...new Set(selectedItems.map((item) => item.packId))];
+        const [catalogItems, catalogPacks] = await Promise.all([
+          tx.equipmentItem.findMany({ where: { packId: { in: packIds } } }),
+          tx.equipmentPack.findMany({ where: { id: { in: packIds } } }),
+        ]);
+        for (const pack of catalogPacks) {
+          const packItems = catalogItems.filter((item) => item.packId === pack.id);
+          const lines = packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price }));
+          const upgrade = packUpgradeDue(lines, pack.price, discipline.itemIds, previouslyOwned, paidByItem);
+          if (!upgrade) continue;
+          upgradedPacks.add(pack.id);
+          const allocation = allocatePackPrice(lines, pack.price);
+          await tx.equipmentPurchase.deleteMany({
+            where: { memberId: saved.id, itemId: { in: packItems.map((item) => item.id) } },
+          });
+          await tx.equipmentPurchase.createMany({
+            data: packItems.map((item) => ({
+              memberId: saved.id,
+              itemId: item.id,
+              unitPrice: allocation.get(item.id) ?? roundMoney(item.price),
+            })),
+          });
+          if (upgrade.due > 0.001) {
+            gearTotal = roundMoney(gearTotal + upgrade.due);
+            tenueNames.push(`Pack complet : ${pack.name}`);
+          }
+        }
+      }
+
       if (discipline.itemIds.length > 0) {
         const owned = await tx.equipmentPurchase.findMany({
           where: { memberId: saved.id },
@@ -111,29 +160,51 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
         const freshIds = discipline.itemIds.filter((itemId) => !ownedIds.has(itemId));
         if (freshIds.length > 0) {
           const chosen = await tx.equipmentItem.findMany({ where: { id: { in: freshIds } } });
-          const packIds = [...new Set(chosen.map((item) => item.packId))];
-          const [packItems, packs] = await Promise.all([
-            tx.equipmentItem.findMany({ where: { packId: { in: packIds } } }),
-            tx.equipmentPack.findMany({ where: { id: { in: packIds } } }),
-          ]);
-          const charge = gearCharge(
-            packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
-            packs.map((pack) => ({ id: pack.id, price: pack.price })),
-            freshIds,
-          );
-          tenueNames = chosen.map((item) => item.name);
-          gearTotal = charge.total;
-          await tx.equipmentPurchase.createMany({
-            data: chosen.map((item) => ({
-              memberId: saved.id,
-              itemId: item.id,
-              unitPrice: charge.unitPrices.get(item.id) ?? roundMoney(item.price),
-            })),
-          });
+          const billable = chosen.filter((item) => !upgradedPacks.has(item.packId));
+          if (billable.length > 0) {
+            const packIds = [...new Set(billable.map((item) => item.packId))];
+            const [packItems, packs] = await Promise.all([
+              tx.equipmentItem.findMany({ where: { packId: { in: packIds } } }),
+              tx.equipmentPack.findMany({ where: { id: { in: packIds } } }),
+            ]);
+            const charge = gearCharge(
+              packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
+              packs.map((pack) => ({ id: pack.id, price: pack.price })),
+              billable.map((item) => item.id),
+            );
+            tenueNames.push(...billable.map((item) => item.name));
+            gearTotal = roundMoney(gearTotal + charge.total);
+            await tx.equipmentPurchase.createMany({
+              data: billable.map((item) => ({
+                memberId: saved.id,
+                itemId: item.id,
+                unitPrice: charge.unitPrices.get(item.id) ?? roundMoney(item.price),
+              })),
+            });
+          }
         }
       }
 
       let paymentId: string | null = null;
+      if (id && gearTotal > 0.001) {
+        const method = String(formData.get("payMethod") ?? "");
+        if (!isPaymentMethod(method)) throw new SignupPaymentError("Choisissez un mode de paiement.");
+        const receiptNumber = await nextReceiptNumber(tx);
+        const payment = await tx.payment.create({
+          data: {
+            memberId: saved.id,
+            amount: gearTotal,
+            remainder: 0,
+            method,
+            paidAt: new Date(),
+            note: tenueNames.join(" · "),
+            receiptNumber,
+            createdById: user.id,
+          },
+        });
+        paymentId = payment.id;
+      }
+
       if (!id && signup) {
         let subscriptionId: string | null = null;
         if (signup.plan && signup.startDate) {
@@ -187,7 +258,13 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
     revalidatePath("/paiements");
     revalidatePath("/");
     return {
-      success: member.paymentId ? "Adhérent créé et paiement encaissé." : id ? "Adhérent mis à jour." : "Adhérent créé.",
+      success: member.paymentId
+        ? id
+          ? "Pack complet encaissé."
+          : "Adhérent créé et paiement encaissé."
+        : id
+          ? "Adhérent mis à jour."
+          : "Adhérent créé.",
       redirectTo: member.paymentId ? `/paiements/${member.paymentId}/recu` : `/adherents/${member.saved.id}`,
     };
   } catch (error) {
@@ -270,6 +347,81 @@ async function readDiscipline(formData: FormData) {
     insuranceStart: hasInsurance ? parseDateOnly(startRaw) : null,
     insuranceEnd: hasInsurance ? parseDateOnly(endRaw) : null,
   };
+}
+
+export async function addMemberGear(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  if (user.role === "COACH") return { error: "Un coach ne peut pas enregistrer une tenue." };
+
+  const memberId = String(formData.get("memberId") ?? "");
+  const method = String(formData.get("method") ?? "");
+  const itemIds = [...new Set(formData.getAll("itemId").map(String).filter(Boolean))];
+  if (!memberId) return { error: "Adhérent introuvable." };
+  if (!isPaymentMethod(method)) return { error: "Choisissez un mode de paiement." };
+  if (itemIds.length === 0) return { error: "Choisissez au moins un article." };
+
+  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { id: true } });
+  if (!member) return { error: "Adhérent introuvable." };
+
+  try {
+    const paymentId = await prisma.$transaction(async (tx) => {
+      const owned = await tx.equipmentPurchase.findMany({
+        where: { memberId },
+        select: { itemId: true },
+      });
+      const ownedIds = new Set(owned.map((row) => row.itemId));
+      const freshIds = itemIds.filter((itemId) => !ownedIds.has(itemId));
+      if (freshIds.length === 0) throw new SignupPaymentError("Ces articles sont déjà enregistrés.");
+
+      const chosen = await tx.equipmentItem.findMany({ where: { id: { in: freshIds } } });
+      if (chosen.length !== freshIds.length) throw new SignupPaymentError("Un article choisi n'existe plus.");
+
+      const packIds = [...new Set(chosen.map((item) => item.packId))];
+      const [packItems, packs] = await Promise.all([
+        tx.equipmentItem.findMany({ where: { packId: { in: packIds } } }),
+        tx.equipmentPack.findMany({ where: { id: { in: packIds } } }),
+      ]);
+      const charge = gearCharge(
+        packItems.map((item) => ({ id: item.id, packId: item.packId, price: item.price })),
+        packs.map((pack) => ({ id: pack.id, price: pack.price })),
+        freshIds,
+      );
+      if (charge.total <= 0) throw new SignupPaymentError("Le montant de ces articles est nul.");
+
+      await tx.equipmentPurchase.createMany({
+        data: chosen.map((item) => ({
+          memberId,
+          itemId: item.id,
+          unitPrice: charge.unitPrices.get(item.id) ?? roundMoney(item.price),
+        })),
+      });
+
+      const receiptNumber = await nextReceiptNumber(tx);
+      const payment = await tx.payment.create({
+        data: {
+          memberId,
+          amount: charge.total,
+          remainder: 0,
+          method,
+          paidAt: new Date(),
+          note: `Tenues : ${chosen.map((item) => item.name).join(", ")}`,
+          receiptNumber,
+          createdById: user.id,
+        },
+      });
+      return payment.id;
+    });
+
+    revalidatePath("/adherents");
+    revalidatePath(`/adherents/${memberId}`);
+    revalidatePath("/paiements");
+    revalidatePath("/");
+    return { success: "Articles ajoutés.", redirectTo: `/paiements/${paymentId}/recu` };
+  } catch (error) {
+    if (error instanceof SignupPaymentError) return { error: error.message };
+    if (uniqueMessage(error)) return { error: "Le numéro de reçu existe déjà. Réessayez." };
+    return { error: "Enregistrement impossible." };
+  }
 }
 
 export async function setMemberStatus(

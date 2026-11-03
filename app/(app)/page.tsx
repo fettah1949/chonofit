@@ -10,7 +10,7 @@ import { ExpiringList } from "@/components/dashboard/expiring-list";
 import { MemberAvatar } from "@/components/members/member-avatar";
 import { getSettings } from "@/lib/maintenance";
 import { MonthStats } from "@/components/dashboard/stat-period-form";
-import { getChosenMonthStats, getDashboardData, getGearStats, STAT_MONTHS, statMonth } from "@/lib/stats";
+import { getChosenMonthStats, getDashboardData, getGearStats, getShopStats, STAT_MONTHS, statMonth } from "@/lib/stats";
 import { formatDate, formatMoney } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 import { isPaymentMethod, METHOD_LABELS, seesMoney } from "@/lib/constants";
@@ -25,14 +25,15 @@ export default async function DashboardPage({
   const settings = await getSettings();
   const money = seesMoney(user.role);
   const params = await searchParams;
-  const sujet = params.sujet === "tenues" ? "tenues" : "abonnements";
+  const sujet = params.sujet === "tenues" ? "tenues" : params.sujet === "boutique" ? "boutique" : "abonnements";
   const chosen = statMonth(params.mois, params.annee);
   const data = await getDashboardData(settings.currency);
   const firstName = user.name?.split(" ")[0] ?? "bonjour";
   const showCash = money || user.role === "RECEPTIONIST";
 
-  const [gear, monthStats] = await Promise.all([
+  const [gear, shop, monthStats] = await Promise.all([
     money ? getGearStats() : Promise.resolve(null),
+    money ? getShopStats() : Promise.resolve(null),
     money ? getChosenMonthStats(chosen.start, chosen.end) : Promise.resolve(null),
   ]);
   const extraPassages = data.visitors.reduce((sum, visit) => sum + visit.count, 0) - data.visitors.length;
@@ -91,15 +92,26 @@ export default async function DashboardPage({
             }
           />
         ) : null}
-        {money && gear ? (
-          <Link href={withQuery("/", { sujet: "tenues", mois: chosen.month, annee: chosen.year }) + "#statistiques"} className="block rounded-2xl border bg-card p-5 shadow-sm transition hover:-translate-y-0.5">
-            <p className="text-sm text-muted-foreground">Tenues · {data.monthLabel}</p>
-            <p className="mt-3 font-display text-3xl font-semibold">{formatMoney(gear.monthAmount, settings.currency)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {pieceLabel(gear.monthCount)}
-              {gear.todayCount > 0 ? ` · aujourd'hui ${formatMoney(gear.todayAmount, settings.currency)}` : ""}
-            </p>
-          </Link>
+        {money && gear && shop ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Link href={withQuery("/", { sujet: "tenues", mois: chosen.month, annee: chosen.year }) + "#statistiques"} className="block rounded-2xl border bg-card p-5 shadow-sm transition hover:-translate-y-0.5">
+              <p className="text-sm text-muted-foreground">Tenues · {data.monthLabel}</p>
+              <p className="mt-3 font-display text-3xl font-semibold">{formatMoney(gear.monthAmount, settings.currency)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {pieceLabel(gear.monthCount)}
+                {gear.todayCount > 0 ? ` · aujourd'hui ${formatMoney(gear.todayAmount, settings.currency)}` : ""}
+              </p>
+            </Link>
+            <Link href={withQuery("/", { sujet: "boutique", mois: chosen.month, annee: chosen.year }) + "#statistiques"} className="block rounded-2xl border bg-card p-5 shadow-sm transition hover:-translate-y-0.5">
+              <p className="text-sm text-muted-foreground">Boutique · {data.monthLabel}</p>
+              <p className="mt-3 font-display text-3xl font-semibold">{formatMoney(shop.monthAmount, settings.currency)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {pieceLabel(shop.monthCount)}
+                {shop.todayCount > 0 ? ` · aujourd'hui ${formatMoney(shop.todayAmount, settings.currency)}` : ""}
+                {shop.stock > 0 ? ` · ${shop.stock} en réserve` : ""}
+              </p>
+            </Link>
+          </div>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
         {stats.map((stat) => {
@@ -131,6 +143,7 @@ export default async function DashboardPage({
             currency={settings.currency}
             subscriptions={monthStats.subscriptions}
             gear={monthStats.gear}
+            shop={monthStats.shop}
           />
         </section>
       ) : null}

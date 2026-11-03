@@ -40,6 +40,8 @@ export async function searchMembersForCheckin(query: string) {
   return ids.flatMap((id) => {
     const member = byId.get(id);
     if (!member) return [];
+    const status = memberDisplayStatus(member);
+    if (status !== "ACTIVE") return [];
     const current = currentSubscription(member.subscriptions);
     return [{
       id: member.id,
@@ -48,7 +50,7 @@ export async function searchMembersForCheckin(query: string) {
       phone: member.phone,
       phone2: member.phone2,
       photoPath: member.photoPath,
-      status: memberDisplayStatus(member),
+      status,
       planName: current?.plan.name ?? "Sans abonnement",
       startDate: current?.startDate?.toISOString() ?? null,
       endDate: current?.endDate?.toISOString() ?? null,

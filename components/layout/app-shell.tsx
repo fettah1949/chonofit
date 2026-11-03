@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   ClipboardCheck,
   CreditCard,
+  ShoppingBag,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -26,6 +27,7 @@ const links: { href: string; label: string; icon: typeof LayoutDashboard; exact?
   { href: "/adherents", label: "Adhérents", icon: Users },
   { href: "/abonnements", label: "Abonnements", icon: CreditCard },
   { href: "/paiements", label: "Paiements", icon: Wallet },
+  { href: "/boutique", label: "Boutique", icon: ShoppingBag },
   { href: "/pointage", label: "Pointage", icon: ClipboardCheck },
 ];
 

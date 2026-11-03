@@ -67,6 +67,7 @@ model Member {
   activities     MemberActivity[]
   groups         MemberGroup[]
   equipmentPurchases EquipmentPurchase[]
+  shopSales          ShopSale[]
 
   @@index([lastName, firstName])
   @@index([status])
@@ -229,6 +230,35 @@ model EquipmentItem {
 
   @@index([activityId])
   @@index([packId])
+}
+
+model ShopProduct {
+  id        String     @id @default(cuid())
+  name      String
+  price     Float
+  stock     Int        @default(0)
+  photoPath String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  sales     ShopSale[]
+}
+
+model ShopSale {
+  id            String      @id @default(cuid())
+  productId     String
+  product       ShopProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  memberId      String?
+  member        Member?     @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  quantity      Int
+  unitPrice     Float
+  method        String
+  receiptNumber String      @unique
+  soldAt        DateTime    @default(now())
+  createdById   String?
+
+  @@index([soldAt])
+  @@index([productId, soldAt])
+  @@index([memberId, soldAt])
 }
 
 model EquipmentPurchase {

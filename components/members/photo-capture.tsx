@@ -15,7 +15,7 @@ export function PhotoCapture({
 }: {
   value: string;
   onChange: (path: string) => void;
-  kind?: "member" | "logo";
+  kind?: "member" | "logo" | "product";
   firstName?: string;
   lastName?: string;
 }) {
@@ -62,7 +62,7 @@ export function PhotoCapture({
     try {
       const body = new FormData();
       body.set("file", file);
-      body.set("kind", kind === "logo" ? "logo" : "member");
+      body.set("kind", kind === "logo" ? "logo" : kind === "product" ? "product" : "member");
       const response = await fetch("/api/uploads", { method: "POST", body });
       const data = (await response.json()) as { path?: string; error?: string };
       if (!response.ok || !data.path) throw new Error(data.error || "Envoi impossible.");
@@ -167,7 +167,7 @@ export function PhotoCapture({
         </div>
         <div className="flex w-full min-w-0 flex-1 flex-col gap-2">
           <div className="text-center @min-[24rem]:text-left">
-            <p className="font-display text-lg font-semibold">{kind === "logo" ? "Logo" : "Photo"}</p>
+            <p className="font-display text-lg font-semibold">{kind === "logo" ? "Logo" : kind === "product" ? "Photo du produit" : "Photo"}</p>
             <p className="text-sm text-muted-foreground">JPG ou PNG, réduit à 800 px.</p>
           </div>
           <Button type="button" className="w-full" onClick={() => start(facing)} disabled={uploading}>

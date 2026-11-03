@@ -57,6 +57,7 @@ export default async function EditMemberPage({ params }: { params: Promise<{ id:
         }))}
         purchases={member.equipmentPurchases.map((purchase) => ({
           id: purchase.id,
+          itemId: purchase.itemId,
           itemName: purchase.item.name,
           packName: purchase.item.pack.name,
           unitPrice: purchase.unitPrice,

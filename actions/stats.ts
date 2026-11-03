@@ -10,11 +10,12 @@ export async function loadMonthStats(sujet: string, mois: string, annee: string)
   const chosen = statMonth(mois, annee);
   const stats = await getChosenMonthStats(chosen.start, chosen.end);
   return {
-    sujet: sujet === "tenues" ? "tenues" as const : "abonnements" as const,
+    sujet: sujet === "tenues" ? "tenues" as const : sujet === "boutique" ? "boutique" as const : "abonnements" as const,
     label: chosen.label,
     month: chosen.month,
     year: chosen.year,
     subscriptions: stats.subscriptions,
     gear: stats.gear,
+    shop: stats.shop,
   };
 }

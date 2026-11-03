@@ -12,7 +12,8 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData();
-  const kind = formData.get("kind") === "logo" ? "gym" : "members";
+  const requested = formData.get("kind");
+  const kind = requested === "logo" ? "gym" : requested === "product" ? "shop" : "members";
   if (kind === "gym" && session.user.role !== "ADMIN") {
     return NextResponse.json(
       { error: "Seul un administrateur peut modifier le logo." },

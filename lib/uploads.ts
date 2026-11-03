@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
-export function safeUploadPath(publicPath: string, folder: "members" | "gym") {
+export function safeUploadPath(publicPath: string, folder: "members" | "gym" | "shop") {
   if (!publicPath.startsWith(`/uploads/${folder}/`) || publicPath.includes("..")) {
     return null;
   }
@@ -22,14 +22,16 @@ export async function deleteUpload(publicPath: string | null | undefined) {
     ? "gym"
     : publicPath.startsWith("/uploads/members/")
       ? "members"
-      : null;
+      : publicPath.startsWith("/uploads/shop/")
+        ? "shop"
+        : null;
   if (!folder) return;
   const full = safeUploadPath(publicPath, folder);
   if (!full) return;
   await unlink(full).catch(() => undefined);
 }
 
-export async function saveImage(file: File, folder: "members" | "gym") {
+export async function saveImage(file: File, folder: "members" | "gym" | "shop") {
   if (file.size <= 0) throw new Error("Le fichier est vide.");
   if (file.size > MAX_BYTES) throw new Error("La photo dépasse 8 Mo.");
 
