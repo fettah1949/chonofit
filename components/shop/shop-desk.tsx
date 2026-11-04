@@ -49,6 +49,19 @@ export type ShopSaleRow = {
 
 type Buyer = { id: string; firstName: string; lastName: string; phone: string };
 
+function ProductPhoto({ path }: { path: string | null }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="aspect-[4/3] bg-secondary">
+      {path && !failed ? (
+        <img src={path} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      ) : (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Sans photo</div>
+      )}
+    </div>
+  );
+}
+
 export function ShopDesk({
   currency,
   products,
@@ -80,13 +93,7 @@ export function ShopDesk({
             const low = product.stock > 0 && product.stock <= LOW_STOCK;
             return (
               <article key={product.id} className="overflow-hidden rounded-2xl border bg-card">
-                <div className="aspect-[4/3] bg-secondary">
-                  {product.photoPath ? (
-                    <img src={product.photoPath} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Sans photo</div>
-                  )}
-                </div>
+                <ProductPhoto path={product.photoPath} />
                 <div className="space-y-3 p-4">
                   <div>
                     <h2 className="font-display text-lg font-semibold">{product.name}</h2>

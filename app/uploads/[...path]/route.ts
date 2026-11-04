@@ -27,7 +27,7 @@ export async function GET(
   if (segments.length !== 2) return new NextResponse(null, { status: 404 });
 
   const [folder, filename] = segments;
-  if ((folder !== "members" && folder !== "gym") || !/^[\w.-]+$/.test(filename) || filename.startsWith(".")) {
+  if ((folder !== "members" && folder !== "gym" && folder !== "shop") || !/^[\w.-]+$/.test(filename) || filename.startsWith(".")) {
     return new NextResponse(null, { status: 404 });
   }
 
