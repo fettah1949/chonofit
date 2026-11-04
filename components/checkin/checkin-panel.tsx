@@ -127,7 +127,7 @@ export function CheckinPanel({ members, sessions }: { members: CheckinMember[]; 
   function roster(session: CheckinSession) {
     return session.memberIds
       .map((id) => byId.get(id))
-      .filter((member): member is CheckinMember => Boolean(member) && member.status === "ACTIVE")
+      .filter((member): member is CheckinMember => member != null && member.status === "ACTIVE")
       .map(stamp)
       .sort(
         (a, b) => a.lastName.localeCompare(b.lastName, "fr") || a.firstName.localeCompare(b.firstName, "fr"),
