@@ -10,8 +10,9 @@ import { deleteUpload, safeUploadPath } from "@/lib/uploads";
 import { uniqueMessage } from "@/lib/db-errors";
 import { nextReceiptNumber } from "@/lib/receipts";
 import { INSURANCE_PRICE, isPaymentMethod } from "@/lib/constants";
-import { allocatePackPrice, gearCharge, packUpgradeDue } from "@/lib/gear";
+import { allocatePackPrice, fitReceiptToTotal, gearCharge, packUpgradeDue, replaceTenueNames, revisedReceiptTotal } from "@/lib/gear";
 import { roundMoney } from "@/lib/utils";
+import type { Prisma } from "@prisma/client";
 import type { ActionState } from "@/lib/action-state";
 
 class SignupPaymentError extends Error {}
@@ -245,7 +246,8 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
         paymentId = payment.id;
       }
 
-      return { saved, paymentId };
+      const adjustedReceipts = id ? await fitMemberReceipts(tx, saved.id) : [];
+      return { saved, paymentId, adjustedReceipts };
     });
 
     if (previous?.photoPath && previous.photoPath !== member.saved.photoPath) {
@@ -256,6 +258,7 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
     revalidatePath(`/adherents/${member.saved.id}`);
     revalidatePath("/abonnements");
     revalidatePath("/paiements");
+    for (const receiptId of member.adjustedReceipts) revalidatePath(`/paiements/${receiptId}/recu`);
     revalidatePath("/");
     return {
       success: member.paymentId
@@ -263,7 +266,9 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
           ? "Pack complet encaissé."
           : "Adhérent créé et paiement encaissé."
         : id
-          ? "Adhérent mis à jour."
+          ? member.adjustedReceipts.length > 0
+            ? "Adhérent mis à jour. Le reçu suit les tenues restantes."
+            : "Adhérent mis à jour."
           : "Adhérent créé.",
       redirectTo: member.paymentId ? `/paiements/${member.paymentId}/recu` : `/adherents/${member.saved.id}`,
     };
@@ -271,6 +276,39 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
     if (error instanceof SignupPaymentError) return { error: error.message };
     return { error: uniqueMessage(error) ?? "Enregistrement impossible." };
   }
+}
+
+async function fitMemberReceipts(tx: Prisma.TransactionClient, memberId: string) {
+  const [payments, purchases] = await Promise.all([
+    tx.payment.findMany({
+      where: { memberId },
+      include: { subscription: { select: { price: true } } },
+    }),
+    tx.equipmentPurchase.findMany({
+      where: { memberId },
+      include: { item: { select: { name: true } } },
+    }),
+  ]);
+  const lines = purchases.map((purchase) => ({ name: purchase.item.name, unitPrice: purchase.unitPrice }));
+  const adjusted: string[] = [];
+  for (const payment of payments) {
+    if (payment.subscriptionId && !payment.subscription) continue;
+    const revised = revisedReceiptTotal(payment.note, payment.subscription?.price ?? 0, lines);
+    if (!revised) continue;
+    const fitted = fitReceiptToTotal(payment.amount, payment.remainder, revised.total);
+    const note = replaceTenueNames(payment.note, revised.keptNames);
+    if (!fitted && note === payment.note) continue;
+    if (fitted && fitted.amount <= 0.001 && fitted.remainder <= 0.001 && !payment.subscriptionId) {
+      await tx.payment.delete({ where: { id: payment.id } });
+    } else {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { ...(fitted ?? {}), note },
+      });
+    }
+    adjusted.push(payment.id);
+  }
+  return adjusted;
 }
 
 async function readSignupPayment(formData: FormData, itemIds: string[], hasInsurance: boolean) {

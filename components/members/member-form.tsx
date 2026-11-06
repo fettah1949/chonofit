@@ -518,7 +518,7 @@ export function MemberForm({
             <SectionTitle>Tenues</SectionTitle>
             <p className="mt-1 text-sm text-muted-foreground">
               Le pack complet est facturé à son prix. Sinon, chaque article est facturé à l'unité.
-              {member.id ? " Décochez un article enregistré par erreur, ou reprenez le pack complet." : ""}
+              {member.id ? " Décochez un article enregistré par erreur : il sort du reçu. Ou reprenez le pack complet." : ""}
             </p>
           </div>
           <p className="font-display text-2xl font-semibold">{formatMoney(gearToCollect, currency)}</p>

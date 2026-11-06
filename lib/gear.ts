@@ -64,6 +64,59 @@ export function packUpgradeDue(
   return { due: roundMoney(packPrice - already), already };
 }
 
+export function tenueNamesInNote(note: string) {
+  const match = note.match(/Tenues\s*:\s*([^·]+)/);
+  if (!match) return [];
+  return match[1].split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+export function insuranceAmountInNote(note: string) {
+  const match = note.match(/Assurance\s*:\s*(\d+(?:[.,]\d+)?)/);
+  if (!match) return 0;
+  return roundMoney(Number(match[1].replace(",", ".")));
+}
+
+export function replaceTenueNames(note: string, names: string[]) {
+  if (!/Tenues\s*:/.test(note)) return note;
+  if (names.length === 0) {
+    return note
+      .replace(/Tenues\s*:\s*[^·]+/, "")
+      .replace(/\s*·\s*·\s*/g, " · ")
+      .replace(/^\s*·\s*/, "")
+      .replace(/\s*·\s*$/, "")
+      .trim();
+  }
+  return note.replace(/Tenues\s*:\s*[^·]*?(?=\s*·|$)/, `Tenues : ${names.join(", ")}`);
+}
+
+export function revisedReceiptTotal(
+  note: string,
+  planPrice: number,
+  purchases: { name: string; unitPrice: number }[],
+) {
+  const names = tenueNamesInNote(note);
+  if (names.length === 0) return null;
+  const missing = names.filter((name) => !purchases.some((item) => item.name === name));
+  if (missing.length === 0) return null;
+  const keptNames = names.filter((name) => !missing.includes(name));
+  const gear = keptNames.reduce((sum, name) => {
+    const item = purchases.find((purchase) => purchase.name === name);
+    return item ? roundMoney(sum + item.unitPrice) : sum;
+  }, 0);
+  return {
+    total: roundMoney(planPrice + gear + insuranceAmountInNote(note)),
+    keptNames,
+  };
+}
+
+export function fitReceiptToTotal(amount: number, remainder: number, nextTotal: number) {
+  const obligation = roundMoney(amount + remainder);
+  const target = roundMoney(Math.max(0, nextTotal));
+  if (obligation <= target + 0.001) return null;
+  if (amount >= target - 0.001) return { amount: target, remainder: 0 };
+  return { amount: roundMoney(amount), remainder: roundMoney(target - amount) };
+}
+
 export function allocatePackPrice(items: GearLine[], packPrice: number) {
   const result = new Map<string, number>();
   if (items.length === 0) return result;
