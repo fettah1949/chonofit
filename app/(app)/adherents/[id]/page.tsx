@@ -12,7 +12,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ageInYears, ageRangeLabel, formatAge } from "@/lib/age";
-import { formatDate, formatDateTime, formatMoney, periodRemainingLabel } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, periodRemainingLabel, toInputDate } from "@/lib/format";
+import { MoveStartDate } from "@/components/subscriptions/move-start-date";
 import { formatDays } from "@/lib/discipline";
 import { cn } from "@/lib/utils";
 import { INSURANCE_PRICE, METHOD_LABELS, seesMoney, type PaymentMethod } from "@/lib/constants";
@@ -83,7 +84,14 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             id={member.id}
             suspended={member.status === "SUSPENDED"}
             settleHref={latestDue ? `/paiements?adherent=${member.id}&recu=${latestDue.id}` : undefined}
-            canDelete={user.role === "ADMIN"}
+            canDelete={
+              user.role === "ADMIN" &&
+              member.subscriptions.length === 0 &&
+              member.payments.length === 0 &&
+              member.checkIns.length === 0 &&
+              member.equipmentPurchases.length === 0 &&
+              member.shopSales.length === 0
+            }
           />
         }
       />
@@ -259,6 +267,12 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
                   {formatDate(subscription.startDate)} → {subscription.endDate ? formatDate(subscription.endDate) : "Illimité"}
                   {money ? ` · ${formatMoney(subscription.price, settings.currency)}` : ""}
                 </p>
+                {user.role === "ADMIN" ? (
+                  <>
+                    <MoveStartDate id={subscription.id} startDate={toInputDate(subscription.startDate)} />
+                    <p className="mt-1 text-xs text-muted-foreground">Le paiement reste à la date où il a été encaissé.</p>
+                  </>
+                ) : null}
               </article>
             ))
           )}

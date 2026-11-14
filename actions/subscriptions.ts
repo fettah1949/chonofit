@@ -112,6 +112,50 @@ export async function createSubscription(
   }
 }
 
+export async function moveSubscriptionStart(id: string, startRaw: string): Promise<ActionState> {
+  const user = await requireUser();
+  if (user.role !== "ADMIN") return { error: "Seul un administrateur peut déplacer la date de début." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startRaw)) return { error: "Indiquez une date de début." };
+  const subscription = await prisma.subscription.findUnique({
+    where: { id },
+    include: { plan: { select: { durationDays: true } } },
+  });
+  if (!subscription) return { error: "Abonnement introuvable." };
+
+  const startDate = parseDateOnly(startRaw);
+  const endDate = computeEndDate(startDate, subscription.plan.durationDays);
+  const others = await prisma.subscription.findMany({
+    where: { memberId: subscription.memberId, id: { not: id } },
+    select: { startDate: true, endDate: true },
+  });
+  const overlaps = others.some((other) =>
+    periodsOverlap(startDate, endDate, other.startDate, other.endDate),
+  );
+  if (overlaps) return { error: "Cette période chevauche un autre abonnement de cet adhérent." };
+
+  const today = startOfDay(new Date());
+  const status =
+    subscription.status === "SUSPENDED"
+      ? "SUSPENDED"
+      : !endDate || endDate >= today
+        ? "ACTIVE"
+        : "EXPIRED";
+  await prisma.subscription.update({ where: { id }, data: { startDate, endDate, status } });
+  revalidatePath("/abonnements");
+  revalidatePath("/adherents");
+  revalidatePath(`/adherents/${subscription.memberId}`);
+  revalidatePath("/");
+  return { success: "Début déplacé. La date du paiement ne change pas." };
+}
+
+function periodsOverlap(startA: Date, endA: Date | null, startB: Date, endB: Date | null) {
+  const a0 = startOfDay(startA).getTime();
+  const b0 = startOfDay(startB).getTime();
+  const a1 = endA ? endOfDay(endA).getTime() : Number.POSITIVE_INFINITY;
+  const b1 = endB ? endOfDay(endB).getTime() : Number.POSITIVE_INFINITY;
+  return a0 <= b1 && b0 <= a1;
+}
+
 export async function setSubscriptionStatus(
   id: string,
   status: "ACTIVE" | "SUSPENDED",

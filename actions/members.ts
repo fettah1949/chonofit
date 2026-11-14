@@ -493,6 +493,19 @@ export async function deleteMember(id: string): Promise<ActionState> {
   if (user.role !== "ADMIN") return { error: "Seul un administrateur peut supprimer un adhérent." };
   const member = await prisma.member.findUnique({ where: { id } });
   if (!member) return { error: "Adhérent introuvable." };
+  const [payments, subscriptions, checkIns, gear, shop, reminders] = await Promise.all([
+    prisma.payment.count({ where: { memberId: id } }),
+    prisma.subscription.count({ where: { memberId: id } }),
+    prisma.checkIn.count({ where: { memberId: id } }),
+    prisma.equipmentPurchase.count({ where: { memberId: id } }),
+    prisma.shopSale.count({ where: { memberId: id } }),
+    prisma.reminder.count({ where: { memberId: id } }),
+  ]);
+  if (payments + subscriptions + checkIns + gear + shop + reminders > 0) {
+    return {
+      error: "Cet adhérent a un historique. Suspendez-le : les paiements et les présences restent en base.",
+    };
+  }
   await prisma.member.delete({ where: { id } });
   await deleteUpload(member.photoPath);
   revalidatePath("/adherents");

@@ -47,8 +47,8 @@ export function MemberActions({
       {canDelete ? (
         <ConfirmButton
           variant="destructive"
-          title="Supprimer cet adhérent ?"
-          description="Ses abonnements, paiements, présences et sa photo seront supprimés. Cette action est définitive."
+          title="Supprimer cette fiche vide ?"
+          description="Elle n'a ni paiement, ni abonnement, ni présence. La photo sera supprimée. Un dossier qui a déjà un historique se suspend, il ne se supprime pas."
           confirmLabel="Supprimer"
           action={() => deleteMember(id)}
         >
