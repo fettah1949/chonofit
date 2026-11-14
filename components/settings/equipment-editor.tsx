@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { createEquipmentItem, deleteEquipmentItem, updateEquipmentItem, updateEquipmentPack } from "@/actions/catalog";
+import { restockEquipmentItem } from "@/actions/equipment-sales";
 import { ConfirmButton } from "@/components/shared/confirm-button";
 import { SubmitButton } from "@/components/shared/submit-button";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useActionToast } from "@/hooks/use-action-toast";
 
 type GearPack = { id: string; name: string; activityId: string; price: number };
-type GearItem = { id: string; name: string; packId: string; price: number; activityId: string; saleCount: number };
+type GearItem = { id: string; name: string; packId: string; price: number; activityId: string; saleCount: number; stock: number };
 
 export function EquipmentEditor({
   packs,
@@ -30,6 +31,9 @@ export function EquipmentEditor({
   const visible = activityFilter === "all" ? items : items.filter((item) => item.activityId === activityFilter);
   const visiblePacks = packs.filter((pack) => visible.some((item) => item.packId === pack.id));
   const total = visiblePacks.reduce((sum, pack) => sum + pack.price, 0);
+  const stockTotal = visible.reduce((sum, item) => sum + item.stock, 0);
+  const emptyCount = visible.filter((item) => item.stock <= 0).length;
+  const lowCount = visible.filter((item) => item.stock > 0 && item.stock <= LOW_STOCK).length;
 
   return (
     <div className="space-y-4">
@@ -51,6 +55,11 @@ export function EquipmentEditor({
       <p className="text-sm text-muted-foreground">
         {visiblePacks.length === 0 ? "Aucun pack" : visiblePacks.length > 1 ? `${visiblePacks.length} packs` : "1 pack"} · {formatMoney(total, currency)}
       </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StockSummary label="Pièces en réserve" value={stockTotal} />
+        <StockSummary label="Articles en rupture" value={emptyCount} tone={emptyCount > 0 ? "empty" : "ok"} />
+        <StockSummary label="Bientôt à court" value={lowCount} hint="1 ou 2 pièces" tone={lowCount > 0 ? "low" : "ok"} />
+      </div>
       {adding ? (
         <AddItemForm
           activities={activities}
@@ -67,6 +76,8 @@ export function EquipmentEditor({
           const activityName = activities.find((activity) => activity.id === pack.activityId)?.name;
           const unitTotal = packItems.reduce((sum, item) => sum + item.price, 0);
           const unitDiffers = Math.round(unitTotal * 100) !== Math.round(pack.price * 100);
+          const packStock = packItems.reduce((sum, item) => sum + item.stock, 0);
+          const packEmpty = packItems.filter((item) => item.stock <= 0).length;
           return (
             <section key={pack.id} className="overflow-hidden rounded-2xl border bg-card">
               <PackPriceForm pack={pack} currency={currency}>
@@ -75,11 +86,16 @@ export function EquipmentEditor({
                   {activityFilter === "all" && activityName ? `${activityName} · ` : ""}
                   {packItems.length > 1 ? `${packItems.length} articles` : "1 article"}
                   {unitDiffers ? ` · à l'unité ${formatMoney(unitTotal, currency)}` : ""}
+                  {packStock === 0 ? " · tout en rupture" : ` · ${packStock} en réserve`}
+                  {packEmpty > 0 && packStock > 0 ? ` · ${packEmpty} en rupture` : ""}
                 </p>
               </PackPriceForm>
               <div className="divide-y">
                 {packItems.map((item) => (
-                  <ItemRow key={item.id} item={item} currency={currency} lastInPack={packItems.length === 1} />
+                  <div key={item.id} className={cn(item.stock <= 0 && "bg-accent/70", item.stock > 0 && item.stock <= LOW_STOCK && "bg-secondary/80")}>
+                    <ItemRow item={item} currency={currency} lastInPack={packItems.length === 1} />
+                    <RestockRow item={item} />
+                  </div>
                 ))}
               </div>
             </section>
@@ -232,6 +248,83 @@ function PackPriceForm({
       <div className="flex items-center gap-2">
         <PriceField name="price" value={price} onChange={setPrice} currency={currency} label="Prix du pack complet" className="w-36" />
         <SaveButton dirty={dirty} />
+      </div>
+      {state?.error ? <p className="w-full rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p> : null}
+    </form>
+  );
+}
+
+const LOW_STOCK = 2;
+
+function stockTone(stock: number) {
+  if (stock <= 0) return "bg-primary text-primary-foreground";
+  if (stock <= LOW_STOCK) return "bg-foreground text-background";
+  return "bg-emerald-700 text-white";
+}
+
+function stockCaption(stock: number) {
+  if (stock <= 0) return "Rupture";
+  if (stock === 1) return "pièce en réserve";
+  return "pièces en réserve";
+}
+
+function StockSummary({
+  label,
+  value,
+  hint,
+  tone = "plain",
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  tone?: "plain" | "empty" | "low" | "ok";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-4",
+        tone === "empty" && "border-primary/20 bg-accent",
+        tone === "low" && "bg-secondary",
+        tone === "ok" && "bg-card",
+        tone === "plain" && "bg-card",
+      )}
+    >
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+function RestockRow({ item }: { item: GearItem }) {
+  const [state, action] = useActionState(restockEquipmentItem, null);
+  useActionToast(state);
+  const [quantity, setQuantity] = useState("1");
+  const empty = item.stock <= 0;
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-3 px-3 pb-3">
+      <input type="hidden" name="id" value={item.id} />
+      <div
+        className={cn("inline-flex h-12 shrink-0 items-center gap-2.5 rounded-xl px-3.5", stockTone(item.stock))}
+        aria-label={empty ? `${item.name} en rupture` : `${item.stock} ${stockCaption(item.stock)}`}
+      >
+        <span className="font-display text-2xl font-semibold leading-none tabular-nums">{item.stock}</span>
+        <span className="text-sm font-medium">{stockCaption(item.stock)}</span>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <Input
+          name="quantity"
+          value={quantity}
+          onChange={(event) => setQuantity(event.target.value)}
+          inputMode="numeric"
+          aria-label={`Quantité à ajouter pour ${item.name}`}
+          className="h-12 w-20 bg-card text-center text-lg"
+          required
+        />
+        <Button type="submit" className="h-12">
+          + stock
+        </Button>
       </div>
       {state?.error ? <p className="w-full rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p> : null}
     </form>

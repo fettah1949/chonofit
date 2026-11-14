@@ -11,6 +11,7 @@ import { uniqueMessage } from "@/lib/db-errors";
 import { nextReceiptNumber } from "@/lib/receipts";
 import { INSURANCE_PRICE, isPaymentMethod } from "@/lib/constants";
 import { allocatePackPrice, fitReceiptToTotal, gearCharge, packUpgradeDue, replaceTenueNames, revisedReceiptTotal } from "@/lib/gear";
+import { GearStockError, returnGearStock, takeGearStock } from "@/lib/gear-stock";
 import { roundMoney } from "@/lib/utils";
 import type { Prisma } from "@prisma/client";
 import type { ActionState } from "@/lib/action-state";
@@ -111,6 +112,10 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
         paidByItem.set(purchase.itemId, roundMoney((paidByItem.get(purchase.itemId) ?? 0) + purchase.unitPrice));
       }
       const previouslyOwned = [...paidByItem.keys()];
+      const added = discipline.itemIds.filter((itemId) => !previouslyOwned.includes(itemId));
+      const removed = previouslyOwned.filter((itemId) => !discipline.itemIds.includes(itemId));
+      await takeGearStock(tx, added.map((itemId) => [itemId, 1]));
+      await returnGearStock(tx, removed);
 
       if (id) {
         await tx.equipmentPurchase.deleteMany({
@@ -258,6 +263,8 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
     revalidatePath(`/adherents/${member.saved.id}`);
     revalidatePath("/abonnements");
     revalidatePath("/paiements");
+    revalidatePath("/boutique");
+    revalidatePath("/parametres/tenues");
     for (const receiptId of member.adjustedReceipts) revalidatePath(`/paiements/${receiptId}/recu`);
     revalidatePath("/");
     return {
@@ -273,7 +280,7 @@ export async function saveMember(_prev: ActionState, formData: FormData): Promis
       redirectTo: member.paymentId ? `/paiements/${member.paymentId}/recu` : `/adherents/${member.saved.id}`,
     };
   } catch (error) {
-    if (error instanceof SignupPaymentError) return { error: error.message };
+    if (error instanceof SignupPaymentError || error instanceof GearStockError) return { error: error.message };
     return { error: uniqueMessage(error) ?? "Enregistrement impossible." };
   }
 }
@@ -413,6 +420,7 @@ export async function addMemberGear(_prev: ActionState, formData: FormData): Pro
 
       const chosen = await tx.equipmentItem.findMany({ where: { id: { in: freshIds } } });
       if (chosen.length !== freshIds.length) throw new SignupPaymentError("Un article choisi n'existe plus.");
+      await takeGearStock(tx, freshIds.map((itemId) => [itemId, 1]));
 
       const packIds = [...new Set(chosen.map((item) => item.packId))];
       const [packItems, packs] = await Promise.all([
@@ -453,10 +461,12 @@ export async function addMemberGear(_prev: ActionState, formData: FormData): Pro
     revalidatePath("/adherents");
     revalidatePath(`/adherents/${memberId}`);
     revalidatePath("/paiements");
+    revalidatePath("/boutique");
+    revalidatePath("/parametres/tenues");
     revalidatePath("/");
     return { success: "Articles ajoutés.", redirectTo: `/paiements/${paymentId}/recu` };
   } catch (error) {
-    if (error instanceof SignupPaymentError) return { error: error.message };
+    if (error instanceof SignupPaymentError || error instanceof GearStockError) return { error: error.message };
     if (uniqueMessage(error)) return { error: "Le numéro de reçu existe déjà. Réessayez." };
     return { error: "Enregistrement impossible." };
   }

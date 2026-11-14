@@ -225,11 +225,28 @@ model EquipmentItem {
   activityId String
   activity   Activity            @relation(fields: [activityId], references: [id], onDelete: Cascade)
   price      Float
+  stock      Int                 @default(0)
   sortOrder  Int                 @default(0)
   purchases  EquipmentPurchase[]
+  sales      EquipmentSale[]
 
   @@index([activityId])
   @@index([packId])
+}
+
+model EquipmentSale {
+  id            String        @id @default(cuid())
+  itemId        String
+  item          EquipmentItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  quantity      Int
+  unitPrice     Float
+  method        String
+  receiptNumber String        @unique
+  soldAt        DateTime      @default(now())
+  createdById   String?
+
+  @@index([soldAt])
+  @@index([itemId, soldAt])
 }
 
 model ShopProduct {

@@ -39,8 +39,27 @@ export default async function EquipmentPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Tenues" description="Le pack complet a son prix. Un article, ou quelques-uns, gardent le leur." />
+      <PageHeader title="Tenues" description="Le pack complet a son prix. Un article, ou quelques-uns, gardent le leur. La réserve se règle ici." />
       <SettingsNav />
+      <EquipmentEditor
+        currency={settings.currency}
+        activities={catalog.activities.map((activity) => ({ id: activity.id, name: activity.name }))}
+        packs={catalog.packs.map((pack) => ({
+          id: pack.id,
+          name: pack.name,
+          activityId: pack.activityId,
+          price: pack.price,
+        }))}
+        items={catalog.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          packId: item.packId,
+          price: item.price,
+          activityId: item.activityId,
+          saleCount: saleCount.get(item.id) ?? 0,
+          stock: item.stock,
+        }))}
+      />
       <div className="flex flex-wrap gap-2">
         {periods.map((filter) => {
           const pressed = periode === filter.value;
@@ -101,24 +120,6 @@ export default async function EquipmentPage({
           currency={settings.currency}
         />
       </section>
-      <EquipmentEditor
-        currency={settings.currency}
-        activities={catalog.activities.map((activity) => ({ id: activity.id, name: activity.name }))}
-        packs={catalog.packs.map((pack) => ({
-          id: pack.id,
-          name: pack.name,
-          activityId: pack.activityId,
-          price: pack.price,
-        }))}
-        items={catalog.items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          packId: item.packId,
-          price: item.price,
-          activityId: item.activityId,
-          saleCount: saleCount.get(item.id) ?? 0,
-        }))}
-      />
     </div>
   );
 }

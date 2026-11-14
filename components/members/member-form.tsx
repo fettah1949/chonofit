@@ -27,7 +27,7 @@ export type CatalogGroup = {
   ageMax: number | null;
 };
 export type CatalogPack = { id: string; name: string; activityId: string; price: number };
-export type CatalogItem = { id: string; name: string; packId: string; activityId: string; price: number };
+export type CatalogItem = { id: string; name: string; packId: string; activityId: string; price: number; stock: number };
 export type CatalogPlan = { id: string; name: string; price: number; durationDays: number };
 export type CatalogPurchase = {
   id: string;
@@ -220,17 +220,23 @@ export function MemberForm({
   }
 
   function toggleItem(id: string) {
-    setItemIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+    const item = items.find((row) => row.id === id);
+    setItemIds((current) => {
+      if (current.includes(id)) return current.filter((value) => value !== id);
+      if (item && item.stock <= 0) return current;
+      return [...current, id];
+    });
   }
 
   function togglePack(packId: string) {
     const packItems = visibleItems.filter((item) => item.packId === packId);
-    const allOn = packItems.length > 0 && packItems.every((item) => itemIds.includes(item.id));
+    const selectable = packItems.filter((item) => item.stock > 0 || itemIds.includes(item.id));
+    const allOn = selectable.length > 0 && selectable.every((item) => itemIds.includes(item.id));
     setItemIds((current) => {
       const next = new Set(current);
       for (const item of packItems) {
         if (allOn) next.delete(item.id);
-        else next.add(item.id);
+        else if (item.stock > 0 || current.includes(item.id)) next.add(item.id);
       }
       return [...next];
     });
@@ -544,12 +550,15 @@ export function MemberForm({
                   <div className="grid gap-2">
                     {packItems.map((item) => {
                       const kept = itemIds.includes(item.id) && owned.has(item.id) && !packSelected;
+                      const reserve = item.stock === 0 ? "Rupture" : `${item.stock} en réserve`;
+                      const priceLabel = packSelected ? "Inclus dans le pack" : kept ? "Déjà acheté" : formatMoney(item.price, currency);
                       return (
                         <Choice
                           key={item.id}
                           checked={itemIds.includes(item.id)}
+                          disabled={item.stock <= 0 && !itemIds.includes(item.id)}
                           label={item.name}
-                          detail={packSelected ? "Inclus dans le pack" : kept ? "Déjà acheté" : formatMoney(item.price, currency)}
+                          detail={`${priceLabel} · ${reserve}`}
                           onChange={() => toggleItem(item.id)}
                         />
                       );

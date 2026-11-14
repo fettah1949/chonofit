@@ -159,7 +159,7 @@ export function MonthStats({
           amount={view.gear.amount}
           countLabel={countLabel(view.gear.count, "pièce", "pièces", "Aucune pièce")}
           currency={currency}
-          hint="Prix des tenues vendues dans le mois choisi. Un pack complet est compté au prix du pack."
+          hint="Prix des tenues vendues dans le mois choisi. Un pack complet est compté au prix du pack. Une vente au comptoir est comptée à l'unité."
         >
           {view.gear.items.length > 0 ? (
             <SaleBars items={view.gear.items} currency={currency} noun="pièce" />

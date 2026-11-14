@@ -100,6 +100,7 @@ export default async function DashboardPage({
               <p className="mt-1 text-xs text-muted-foreground">
                 {pieceLabel(gear.monthCount)}
                 {gear.todayCount > 0 ? ` · aujourd'hui ${formatMoney(gear.todayAmount, settings.currency)}` : ""}
+                {` · ${gear.stock} en réserve`}
               </p>
             </Link>
             <Link href={withQuery("/", { sujet: "boutique", mois: chosen.month, annee: chosen.year }) + "#statistiques"} className="block rounded-2xl border bg-card p-5 shadow-sm transition hover:-translate-y-0.5">

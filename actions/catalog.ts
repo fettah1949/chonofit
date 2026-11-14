@@ -118,6 +118,8 @@ export async function deleteEquipmentItem(id: string): Promise<ActionState> {
     select: { id: true, packId: true },
   });
   if (!item) return { error: "Article introuvable." };
+  const counterSales = await prisma.equipmentSale.count({ where: { itemId: id } });
+  if (counterSales > 0) return { error: "Cet article a été vendu au comptoir. Il reste dans le catalogue." };
 
   let packRemoved = false;
   await prisma.$transaction(async (tx) => {

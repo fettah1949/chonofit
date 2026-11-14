@@ -35,7 +35,7 @@ export async function getDashboardData(currency: string) {
   const renewals = await listRenewals();
   const upcoming = renewals.filter((subscription) => subscription.endDate && subscription.endDate >= todayStart);
 
-  const [activeSubscriptions, payments, shopSales, checkIns, members, blockedCandidates, openAdvances] = await Promise.all([
+  const [activeSubscriptions, payments, shopSales, gearSales, checkIns, members, blockedCandidates, openAdvances] = await Promise.all([
     prisma.subscription.findMany({
       where: {
         status: "ACTIVE",
@@ -56,6 +56,10 @@ export async function getDashboardData(currency: string) {
       },
     }),
     prisma.shopSale.findMany({
+      where: { soldAt: { gte: chartStart } },
+      select: { soldAt: true, unitPrice: true, quantity: true, method: true },
+    }),
+    prisma.equipmentSale.findMany({
       where: { soldAt: { gte: chartStart } },
       select: { soldAt: true, unitPrice: true, quantity: true, method: true },
     }),
@@ -159,7 +163,12 @@ export async function getDashboardData(currency: string) {
     amount: roundMoney(sale.unitPrice * sale.quantity),
     method: sale.method,
   }));
-  for (const payment of [...payments, ...shopLines]) {
+  const gearLines = gearSales.map((sale) => ({
+    paidAt: sale.soldAt,
+    amount: roundMoney(sale.unitPrice * sale.quantity),
+    method: sale.method,
+  }));
+  for (const payment of [...payments, ...shopLines, ...gearLines]) {
     const date = payment.paidAt;
     const bucket = monthIndex.get(`${date.getFullYear()}-${date.getMonth()}`);
     if (bucket) bucket.revenue = roundMoney(bucket.revenue + payment.amount);
@@ -167,7 +176,8 @@ export async function getDashboardData(currency: string) {
 
   const todayPayments = payments.filter((payment) => payment.paidAt >= todayStart && payment.paidAt <= todayEnd);
   const todayShop = shopLines.filter((sale) => sale.paidAt >= todayStart && sale.paidAt <= todayEnd);
-  const todayReceipts = [...todayPayments, ...todayShop];
+  const todayGear = gearLines.filter((sale) => sale.paidAt >= todayStart && sale.paidAt <= todayEnd);
+  const todayReceipts = [...todayPayments, ...todayShop, ...todayGear];
   const cashPayments = todayReceipts.filter((payment) => payment.method === "CASH");
   const otherBuckets = new Map<string, number>();
   for (const payment of todayReceipts) {
@@ -175,6 +185,7 @@ export async function getDashboardData(currency: string) {
     otherBuckets.set(payment.method, roundMoney((otherBuckets.get(payment.method) ?? 0) + payment.amount));
   }
   const monthShop = shopLines.filter((sale) => sale.paidAt >= monthStart && sale.paidAt <= monthEnd);
+  const monthGear = gearLines.filter((sale) => sale.paidAt >= monthStart && sale.paidAt <= monthEnd);
   const monthName = format(now, "MMMM", { locale: fr });
 
   return {
@@ -186,7 +197,8 @@ export async function getDashboardData(currency: string) {
     monthLabel: monthName.charAt(0).toUpperCase() + monthName.slice(1),
     monthRevenue: roundMoney(
       monthPayments.reduce((sum, payment) => sum + payment.amount, 0) +
-        monthShop.reduce((sum, sale) => sum + sale.amount, 0),
+        monthShop.reduce((sum, sale) => sum + sale.amount, 0) +
+        monthGear.reduce((sum, sale) => sum + sale.amount, 0),
     ),
     duplicateReceipts: duplicateReceipts(monthPayments, priorCounts),
     today: {
@@ -408,13 +420,24 @@ export async function getGearStats(period: GearPeriod = "mois") {
     mois: { start: monthStart, end: monthEnd },
     tous: { start: null, end: null },
   };
-  const purchases = await prisma.equipmentPurchase.findMany({
-    select: {
-      unitPrice: true,
-      purchasedAt: true,
-      item: { select: { id: true, name: true, activity: { select: { name: true } } } },
-    },
-  });
+  const [purchases, counterSales, stock] = await Promise.all([
+    prisma.equipmentPurchase.findMany({
+      select: {
+        unitPrice: true,
+        purchasedAt: true,
+        item: { select: { id: true, name: true, activity: { select: { name: true } } } },
+      },
+    }),
+    prisma.equipmentSale.findMany({
+      select: {
+        quantity: true,
+        unitPrice: true,
+        soldAt: true,
+        item: { select: { id: true, name: true, activity: { select: { name: true } } } },
+      },
+    }),
+    prisma.equipmentItem.aggregate({ _sum: { stock: true } }),
+  ]);
 
   const months = Array.from({ length: 6 }, (_, index) => {
     const date = startOfMonth(subMonths(now, 5 - index));
@@ -433,30 +456,40 @@ export async function getGearStats(period: GearPeriod = "mois") {
   let monthAmount = 0;
   let todayAmount = 0;
 
-  for (const purchase of purchases) {
-    const bucket = monthIndex.get(`${purchase.purchasedAt.getFullYear()}-${purchase.purchasedAt.getMonth()}`);
-    if (purchase.purchasedAt >= chartStart && purchase.purchasedAt <= monthEnd && bucket) {
-      bucket.count += 1;
-      bucket.amount = roundMoney(bucket.amount + purchase.unitPrice);
+  function record(
+    at: Date,
+    item: { id: string; name: string; activity: { name: string } },
+    pieces: number,
+    lineAmount: number,
+  ) {
+    const bucket = monthIndex.get(`${at.getFullYear()}-${at.getMonth()}`);
+    if (at >= chartStart && at <= monthEnd && bucket) {
+      bucket.count += pieces;
+      bucket.amount = roundMoney(bucket.amount + lineAmount);
     }
     for (const key of gearPeriods) {
-      if (inGearPeriod(purchase.purchasedAt, bounds[key])) counts[key] += 1;
+      if (inGearPeriod(at, bounds[key])) counts[key] += pieces;
     }
-    if (inGearPeriod(purchase.purchasedAt, bounds.mois)) monthAmount = roundMoney(monthAmount + purchase.unitPrice);
-    if (inGearPeriod(purchase.purchasedAt, bounds.jour)) todayAmount = roundMoney(todayAmount + purchase.unitPrice);
-    if (!inGearPeriod(purchase.purchasedAt, bounds[period])) continue;
-    count += 1;
-    amount = roundMoney(amount + purchase.unitPrice);
-    const current = items.get(purchase.item.id) ?? {
-      id: purchase.item.id,
-      name: purchase.item.name,
-      activity: purchase.item.activity.name,
+    if (inGearPeriod(at, bounds.mois)) monthAmount = roundMoney(monthAmount + lineAmount);
+    if (inGearPeriod(at, bounds.jour)) todayAmount = roundMoney(todayAmount + lineAmount);
+    if (!inGearPeriod(at, bounds[period])) return;
+    count += pieces;
+    amount = roundMoney(amount + lineAmount);
+    const current = items.get(item.id) ?? {
+      id: item.id,
+      name: item.name,
+      activity: item.activity.name,
       count: 0,
       amount: 0,
     };
-    current.count += 1;
-    current.amount = roundMoney(current.amount + purchase.unitPrice);
-    items.set(purchase.item.id, current);
+    current.count += pieces;
+    current.amount = roundMoney(current.amount + lineAmount);
+    items.set(item.id, current);
+  }
+
+  for (const purchase of purchases) record(purchase.purchasedAt, purchase.item, 1, purchase.unitPrice);
+  for (const sale of counterSales) {
+    record(sale.soldAt, sale.item, sale.quantity, roundMoney(sale.unitPrice * sale.quantity));
   }
 
   return {
@@ -467,6 +500,7 @@ export async function getGearStats(period: GearPeriod = "mois") {
     monthAmount,
     todayCount: counts.jour,
     todayAmount,
+    stock: stock._sum.stock ?? 0,
     counts,
     months,
     items: [...items.values()].sort(
@@ -543,7 +577,7 @@ export function statMonth(mois: string | undefined, annee: string | undefined, n
 }
 
 export async function getChosenMonthStats(start: Date, end: Date) {
-  const [subscriptions, purchases, shopSales, firstSubscription, firstPurchase, firstShopSale] = await Promise.all([
+  const [subscriptions, purchases, counterSales, shopSales, firstSubscription, firstPurchase, firstCounterSale, firstShopSale] = await Promise.all([
     prisma.subscription.findMany({
       where: { startDate: { gte: start, lte: end } },
       select: { price: true, plan: { select: { id: true, name: true } } },
@@ -551,6 +585,14 @@ export async function getChosenMonthStats(start: Date, end: Date) {
     prisma.equipmentPurchase.findMany({
       where: { purchasedAt: { gte: start, lte: end } },
       select: {
+        unitPrice: true,
+        item: { select: { id: true, name: true, activity: { select: { name: true } } } },
+      },
+    }),
+    prisma.equipmentSale.findMany({
+      where: { soldAt: { gte: start, lte: end } },
+      select: {
+        quantity: true,
         unitPrice: true,
         item: { select: { id: true, name: true, activity: { select: { name: true } } } },
       },
@@ -565,6 +607,7 @@ export async function getChosenMonthStats(start: Date, end: Date) {
     }),
     prisma.subscription.findFirst({ orderBy: { startDate: "asc" }, select: { startDate: true } }),
     prisma.equipmentPurchase.findFirst({ orderBy: { purchasedAt: "asc" }, select: { purchasedAt: true } }),
+    prisma.equipmentSale.findFirst({ orderBy: { soldAt: "asc" }, select: { soldAt: true } }),
     prisma.shopSale.findFirst({ orderBy: { soldAt: "asc" }, select: { soldAt: true } }),
   ]);
 
@@ -600,6 +643,21 @@ export async function getChosenMonthStats(start: Date, end: Date) {
     current.amount = roundMoney(current.amount + purchase.unitPrice);
     items.set(purchase.item.id, current);
   }
+  for (const sale of counterSales) {
+    const line = roundMoney(sale.unitPrice * sale.quantity);
+    gearCount += sale.quantity;
+    gearAmount = roundMoney(gearAmount + line);
+    const current = items.get(sale.item.id) ?? {
+      id: sale.item.id,
+      name: sale.item.name,
+      activity: sale.item.activity.name,
+      count: 0,
+      amount: 0,
+    };
+    current.count += sale.quantity;
+    current.amount = roundMoney(current.amount + line);
+    items.set(sale.item.id, current);
+  }
 
   const shopItems = new Map<string, { id: string; name: string; count: number; amount: number }>();
   let shopAmount = 0;
@@ -622,6 +680,7 @@ export async function getChosenMonthStats(start: Date, end: Date) {
   const firstYear = Math.min(
     firstSubscription?.startDate.getFullYear() ?? new Date().getFullYear(),
     firstPurchase?.purchasedAt.getFullYear() ?? new Date().getFullYear(),
+    firstCounterSale?.soldAt.getFullYear() ?? new Date().getFullYear(),
     firstShopSale?.soldAt.getFullYear() ?? new Date().getFullYear(),
     new Date().getFullYear() - 2,
   );

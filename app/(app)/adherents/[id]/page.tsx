@@ -63,6 +63,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         name: item.name,
         price: item.price,
         owned: ownedGear.has(item.id),
+        stock: item.stock,
       })),
     }));
 

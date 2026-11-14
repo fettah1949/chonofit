@@ -49,6 +49,7 @@ export default async function NewMemberPage() {
           packId: item.packId,
           activityId: item.activityId,
           price: item.price,
+          stock: item.stock,
         }))}
       />
     </div>

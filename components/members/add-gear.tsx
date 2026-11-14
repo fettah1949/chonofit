@@ -18,7 +18,7 @@ export type GearChoice = {
   name: string;
   activityName: string;
   price: number;
-  items: { id: string; name: string; price: number; owned: boolean }[];
+  items: { id: string; name: string; price: number; owned: boolean; stock: number }[];
 };
 
 export function AddGear({
@@ -53,11 +53,13 @@ export function AddGear({
   const severalActivities = new Set(packs.map((pack) => pack.activityName)).size > 1;
 
   function toggle(id: string) {
+    const item = packs.flatMap((pack) => pack.items).find((row) => row.id === id);
+    if (item && !item.owned && item.stock <= 0) return;
     setSelected((current) => (current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id]));
   }
 
   function toggleRest(pack: GearChoice) {
-    const fresh = pack.items.filter((item) => !item.owned).map((item) => item.id);
+    const fresh = pack.items.filter((item) => !item.owned && item.stock > 0).map((item) => item.id);
     const allOn = fresh.every((id) => selected.includes(id));
     setSelected((current) => {
       const next = new Set(current);
@@ -95,7 +97,7 @@ export function AddGear({
           ))}
           <div className="space-y-5">
             {packs.map((pack) => {
-              const fresh = pack.items.filter((item) => !item.owned);
+              const fresh = pack.items.filter((item) => !item.owned && item.stock > 0);
               const restSelected = fresh.length > 0 && fresh.every((item) => selected.includes(item.id));
               const quote = packQuote(
                 pack.items.map((item) => ({ id: item.id, packId: pack.id, price: item.price })),
@@ -132,19 +134,22 @@ export function AddGear({
                         <button
                           key={item.id}
                           type="button"
-                          disabled={item.owned}
+                          disabled={item.owned || item.stock <= 0}
                           aria-pressed={item.owned ? undefined : on}
                           className={cn(
                             "flex min-h-14 items-center justify-between gap-3 rounded-xl border px-3 text-left",
-                            item.owned && "cursor-not-allowed bg-secondary text-muted-foreground",
-                            !item.owned && on && "border-primary bg-accent",
-                            !item.owned && !on && "bg-card hover:bg-secondary",
+                            (item.owned || item.stock <= 0) && "cursor-not-allowed bg-secondary text-muted-foreground",
+                            !item.owned && item.stock > 0 && on && "border-primary bg-accent",
+                            !item.owned && item.stock > 0 && !on && "bg-card hover:bg-secondary",
                           )}
                           onClick={() => toggle(item.id)}
                         >
-                          <span className="font-medium">{item.name}</span>
+                          <span>
+                            <span className="block font-medium">{item.name}</span>
+                            <span className="block text-xs">{item.stock === 0 ? "Rupture" : `${item.stock} en réserve`}</span>
+                          </span>
                           <span className="shrink-0 text-sm tabular-nums">
-                            {item.owned ? "Déjà pris" : quote.complete ? "Inclus" : formatMoney(item.price, currency)}
+                            {item.owned ? "Déjà pris" : item.stock <= 0 ? "Rupture" : quote.complete ? "Inclus" : formatMoney(item.price, currency)}
                           </span>
                         </button>
                       );
