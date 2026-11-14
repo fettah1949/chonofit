@@ -19,11 +19,11 @@ export function MoveStartDate({ id, startDate }: { id: string; startDate: string
         event.preventDefault();
         startTransition(async () => {
           const result = await moveSubscriptionStart(id, value);
-          if (result.error) {
+          if (result?.error) {
             toast.error(result.error);
             return;
           }
-          toast.success(result.success ?? "Date de début mise à jour.");
+          toast.success(result?.success ?? "Date de début mise à jour.");
           router.refresh();
         });
       }}
