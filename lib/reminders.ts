@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { differenceInCalendarDays, startOfDay } from "date-fns";
+import { nextMoroccoClock } from "@/lib/backup";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/maintenance";
 import { formatDate } from "@/lib/format";
@@ -10,7 +11,11 @@ import type { ActionState } from "@/lib/action-state";
 
 type Due = Awaited<ReturnType<typeof listRenewals>>[number];
 
-const globalJob = globalThis as unknown as { chronoReminderJob?: { started: boolean; running: boolean } };
+const REMINDER_HOUR = 17;
+
+const globalJob = globalThis as unknown as {
+  chronoReminderJob?: { started: boolean; running: boolean; timer?: ReturnType<typeof setTimeout> };
+};
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,10 +108,21 @@ export async function sendDueReminders() {
   console.info(sent > 0 ? `Relances automatiques : ${sent} envoyée${sent > 1 ? "s" : ""}.` : "Relances automatiques : rien à envoyer.");
 }
 
+function scheduleNextReminders() {
+  const job = globalJob.chronoReminderJob;
+  if (!job) return;
+  const delay = Math.max(1000, nextMoroccoClock(REMINDER_HOUR) - Date.now());
+  job.timer = setTimeout(() => {
+    void sendDueReminders().finally(scheduleNextReminders);
+  }, delay);
+}
+
 export function startAutomaticReminders() {
   if (globalJob.chronoReminderJob?.started) return;
   globalJob.chronoReminderJob = { started: true, running: false };
-  console.info("Relances automatiques programmées.");
-  setTimeout(() => void sendDueReminders(), 45_000);
-  setInterval(() => void sendDueReminders(), 6 * 60 * 60 * 1000);
+  const delay = Math.max(1000, nextMoroccoClock(REMINDER_HOUR) - Date.now());
+  console.info(
+    `Relances automatiques prévues chaque jour à 17:00, heure du Maroc. Prochaine dans ${Math.round(delay / 60000)} min.`,
+  );
+  scheduleNextReminders();
 }

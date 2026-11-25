@@ -45,24 +45,25 @@ function offsetMs(instant: Date) {
   return asUtc - (instant.getTime() - instant.getMilliseconds());
 }
 
-function midnightUtc(year: number, month: number, day: number) {
-  let utc = Date.UTC(year, month - 1, day, 0, 0, 0);
+function clockUtc(year: number, month: number, day: number, hour: number, minute: number) {
+  let utc = Date.UTC(year, month - 1, day, hour, minute, 0);
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const midnight = Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMs(new Date(utc));
-    if (midnight === utc) return midnight;
-    utc = midnight;
+    const target = Date.UTC(year, month - 1, day, hour, minute, 0) - offsetMs(new Date(utc));
+    if (target === utc) return target;
+    utc = target;
   }
   return utc;
 }
 
-export function nextMoroccoMidnight(now = new Date()) {
+export function nextMoroccoClock(hour: number, minute = 0, now = new Date()) {
   const part = moroccoParts(now);
-  let utc = midnightUtc(part.year, part.month, part.day + 1);
-  if (utc <= now.getTime()) {
-    const later = moroccoParts(new Date(now.getTime() + 36 * 60 * 60 * 1000));
-    utc = midnightUtc(later.year, later.month, later.day);
-  }
+  let utc = clockUtc(part.year, part.month, part.day, hour, minute);
+  if (utc <= now.getTime()) utc = clockUtc(part.year, part.month, part.day + 1, hour, minute);
   return utc;
+}
+
+export function nextMoroccoMidnight(now = new Date()) {
+  return nextMoroccoClock(0, 0, now);
 }
 
 function calendarDaysAfter(olderKey: string, newerKey: string) {
