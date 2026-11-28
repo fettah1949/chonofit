@@ -87,18 +87,36 @@ export async function saveShopProduct(input: {
   return { success: id ? "Produit mis à jour." : "Produit ajouté." };
 }
 
-export async function restockShopProduct(productId: string, added: number): Promise<ActionState> {
+export async function restockShopProduct(
+  productId: string,
+  amount: number,
+  direction: "add" | "remove" = "add",
+): Promise<ActionState> {
   const user = await requireDesk();
   if (!user) return { error: "Accès refusé." };
-  const quantity = Math.floor(Number(added));
+  if (direction === "remove" && user.role !== "ADMIN") return { error: "Seul un administrateur peut retirer du stock." };
+  const quantity = Math.floor(Number(amount));
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
-    return { error: "Indiquez une quantité à ajouter." };
+    return { error: direction === "remove" ? "Indiquez une quantité à retirer." : "Indiquez une quantité à ajouter." };
   }
-  const product = await prisma.shopProduct.findUnique({ where: { id: productId }, select: { id: true, name: true } });
+  const product = await prisma.shopProduct.findUnique({
+    where: { id: productId },
+    select: { id: true, name: true, stock: true },
+  });
   if (!product) return { error: "Produit introuvable." };
-  await prisma.shopProduct.update({ where: { id: productId }, data: { stock: { increment: quantity } } });
+  if (direction === "remove") {
+    const taken = await prisma.shopProduct.updateMany({
+      where: { id: productId, stock: { gte: quantity } },
+      data: { stock: { decrement: quantity } },
+    });
+    if (taken.count !== 1) return { error: `Il reste ${product.stock} en réserve.` };
+  } else {
+    await prisma.shopProduct.update({ where: { id: productId }, data: { stock: { increment: quantity } } });
+  }
   revalidatePath("/boutique");
-  return { success: `${quantity} ajoutée${quantity > 1 ? "s" : ""} au stock de ${product.name}.` };
+  revalidatePath("/");
+  const verb = direction === "remove" ? "retirée" : "ajoutée";
+  return { success: `${quantity} ${verb}${quantity > 1 ? "s" : ""} ${direction === "remove" ? "du" : "au"} stock de ${product.name}.` };
 }
 
 export async function deleteShopProduct(productId: string): Promise<ActionState> {

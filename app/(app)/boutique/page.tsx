@@ -65,6 +65,7 @@ export default async function ShopPage() {
       />
       <ShopDesk
         currency={settings.currency}
+        canAdjustStock={user.role === "ADMIN"}
         products={products.map((product) => ({
           id: product.id,
           name: product.name,

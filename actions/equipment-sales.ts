@@ -59,16 +59,28 @@ export async function sellEquipmentItem(input: {
 export async function restockEquipmentItem(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
+  const direction = formData.get("direction") === "remove" ? "remove" : "add";
   const quantity = Math.floor(Number(String(formData.get("quantity") ?? "").replace(",", ".")));
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
-    return { error: "Indiquez une quantité à ajouter." };
+    return { error: direction === "remove" ? "Indiquez une quantité à retirer." : "Indiquez une quantité à ajouter." };
   }
   const item = await prisma.equipmentItem.findUnique({
     where: { id },
-    select: { id: true, name: true, pack: { select: { name: true } } },
+    select: { id: true, name: true, stock: true, pack: { select: { name: true } } },
   });
   if (!item) return { error: "Article introuvable." };
-  await prisma.equipmentItem.update({ where: { id }, data: { stock: { increment: quantity } } });
+  if (direction === "remove") {
+    const taken = await prisma.equipmentItem.updateMany({
+      where: { id, stock: { gte: quantity } },
+      data: { stock: { decrement: quantity } },
+    });
+    if (taken.count !== 1) return { error: `Il reste ${item.stock} en réserve.` };
+  } else {
+    await prisma.equipmentItem.update({ where: { id }, data: { stock: { increment: quantity } } });
+  }
   refreshGear();
-  return { success: `${quantity} ajoutée${quantity > 1 ? "s" : ""} au stock de ${item.name} · ${item.pack.name}.` };
+  const verb = direction === "remove" ? "retirée" : "ajoutée";
+  return {
+    success: `${quantity} ${verb}${quantity > 1 ? "s" : ""} ${direction === "remove" ? "du" : "au"} stock de ${item.name} · ${item.pack.name}.`,
+  };
 }

@@ -64,10 +64,12 @@ function ProductPhoto({ path }: { path: string | null }) {
 
 export function ShopDesk({
   currency,
+  canAdjustStock,
   products,
   sales,
 }: {
   currency: string;
+  canAdjustStock: boolean;
   products: ShopProductCard[];
   sales: ShopSaleRow[];
 }) {
@@ -107,7 +109,7 @@ export function ShopDesk({
                       {empty ? "Rupture" : "Vendre"}
                     </Button>
                     <Button variant="outline" className="h-12" onClick={() => setRestock(product)}>
-                      + stock
+                      {canAdjustStock ? "Stock" : "+ stock"}
                     </Button>
                     <Button variant="outline" className="h-12" onClick={() => setEditor(product)}>
                       Modifier
@@ -189,10 +191,11 @@ export function ShopDesk({
       <RestockDialog
         product={restock}
         pending={pending}
+        canAdjust={canAdjustStock}
         onClose={() => setRestock(null)}
-        onAdd={(id, quantity) => {
+        onSave={(id, quantity, direction) => {
           startTransition(async () => {
-            const result = await restockShopProduct(id, quantity);
+            const result = await restockShopProduct(id, quantity, direction);
             if (result?.error) {
               toast.error(result.error);
               return;
@@ -415,20 +418,27 @@ function SellDialog({
 function RestockDialog({
   product,
   pending,
+  canAdjust,
   onClose,
-  onAdd,
+  onSave,
 }: {
   product: ShopProductCard | null;
   pending: boolean;
+  canAdjust: boolean;
   onClose: () => void;
-  onAdd: (id: string, quantity: number) => void;
+  onSave: (id: string, quantity: number, direction: "add" | "remove") => void;
 }) {
   const [quantity, setQuantity] = useState("1");
+  const [direction, setDirection] = useState<"add" | "remove">("add");
   const [seen, setSeen] = useState<string | null>(null);
   if ((product?.id ?? null) !== seen) {
     setSeen(product?.id ?? null);
     setQuantity("1");
+    setDirection("add");
   }
+  const removing = canAdjust && direction === "remove";
+  const amount = Math.floor(Number(quantity));
+  const tooMany = removing && product != null && (!Number.isInteger(amount) || amount > product.stock);
 
   return (
     <Dialog open={product !== null} onOpenChange={(open) => !open && onClose()}>
@@ -444,15 +454,41 @@ function RestockDialog({
             className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              onAdd(product.id, Number(quantity));
+              onSave(product.id, amount, removing ? "remove" : "add");
             }}
           >
+            {canAdjust ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  aria-pressed={direction === "add"}
+                  className={cn("h-10 rounded-xl border px-3 text-sm font-medium", direction === "add" ? "border-primary bg-accent" : "bg-card")}
+                  onClick={() => setDirection("add")}
+                >
+                  Ajouter
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={direction === "remove"}
+                  disabled={product.stock < 1}
+                  className={cn(
+                    "h-10 rounded-xl border px-3 text-sm font-medium disabled:opacity-50",
+                    direction === "remove" ? "border-primary bg-accent" : "bg-card",
+                  )}
+                  onClick={() => setDirection("remove")}
+                >
+                  Retirer
+                </button>
+              </div>
+            ) : null}
             <label className="block space-y-1 text-sm">
-              <span>Pièces à ajouter</span>
+              <span>{removing ? "Pièces à retirer" : "Pièces à ajouter"}</span>
               <Input value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="numeric" required />
             </label>
             <DialogFooter>
-              <Button type="submit" disabled={pending}>{pending ? "Ajout…" : "Ajouter"}</Button>
+              <Button type="submit" disabled={pending || tooMany || amount < 1}>
+                {pending ? "Enregistrement…" : removing ? "Retirer" : "Ajouter"}
+              </Button>
             </DialogFooter>
           </form>
         ) : null}

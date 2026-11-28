@@ -322,8 +322,11 @@ function RestockRow({ item }: { item: GearItem }) {
           className="h-12 w-20 bg-card text-center text-lg"
           required
         />
-        <Button type="submit" className="h-12">
+        <Button type="submit" name="direction" value="add" className="h-12">
           + stock
+        </Button>
+        <Button type="submit" name="direction" value="remove" variant="outline" className="h-12" disabled={item.stock < 1}>
+          − stock
         </Button>
       </div>
       {state?.error ? <p className="w-full rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p> : null}
